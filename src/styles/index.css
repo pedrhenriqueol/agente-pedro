@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-industrial: #05070a;
+    --surface-industrial: #0c0e14;
+    --card-industrial: #121620;
+    --border-industrial: #1e2633;
+    --accent-industrial: #10b981;
+  }
+
+  body {
+    background-color: transparent;
+    color: #f8fafc;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #090c12;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #1e2633;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2d3748;
+  }
+}
+
+/* Áreas de arrasto do Tauri */
+[data-tauri-drag-region] {
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+button, a, input, select, textarea, [role="button"] {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}

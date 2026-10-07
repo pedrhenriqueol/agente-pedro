@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "Agente Pedro",
+  "version": "0.1.0",
+  "identifier": "com.pedro.agente-pedro",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "island",
+        "title": "Agente Pedro - Ilha",
+        "width": 380,
+        "height": 48,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": true,
+        "url": "index.html?window=island"
+      },
+      {
+        "label": "main",
+        "title": "Agente Pedro - Console",
+        "width": 1100,
+        "height": 720,
+        "decorations": false,
+        "transparent": false,
+        "resizable": true,
+        "visible": false,
+        "center": true,
+        "url": "index.html?window=main"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "sql": {
+      "preload": [
+        "sqlite:agente_pedro.db"
+      ]
+    }
+  }
+}
