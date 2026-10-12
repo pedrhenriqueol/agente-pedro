@@ -1,98 +1,67 @@
-import React, { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { emit } from '@tauri-apps/api/event';
+import { House, Focus, Wallet, SlidersHorizontal, ArrowRight, Command, HardDrive } from 'lucide-react';
 import { CustomTitleBar } from './CustomTitleBar';
 import { RoutineModule } from './RoutineModule';
 import { FinanceModule } from './FinanceModule';
-import { Clock, Wallet, ShieldCheck, Database, HardDrive } from 'lucide-react';
-import { useFocusStore } from '../stores/useFocusStore';
-import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
+import { HomePage } from './HomePage';
+import { AppearancePage } from './AppearancePage';
+import { Dialog } from './ui/Dialog';
+import type { Page } from '../lib/desktop';
 
-type DashboardTab = 'routine' | 'finance';
+const PAGES = [
+  { id: 'home', name: 'Hoje', detail: 'Prioridades e visão do dia', Icon: House },
+  { id: 'routine', name: 'Rotinas e foco', detail: 'Tarefas, hábitos e Pomodoro', Icon: Focus },
+  { id: 'finance', name: 'Finanças', detail: 'Contas, gastos e limites', Icon: Wallet },
+  { id: 'appearance', name: 'Aparência', detail: 'Seu espaço do seu jeito', Icon: SlidersHorizontal },
+] as const;
+function isPage(value: unknown): value is Page { return PAGES.some(p => p.id === value); }
 
-export const MainDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('routine');
-
-  const { tasks } = useFocusStore();
-  const { consolidated } = useFinanceStore();
-
-  const pendingTasks = tasks.filter((t) => t.completed === 0).length;
-
-  return (
-    <div className="flex flex-col h-screen w-screen bg-industrial-bg text-slate-100 overflow-hidden border border-industrial-border shadow-2xl select-none">
-      {/* ── BARRA DE TÍTULO CUSTOMIZADA ── */}
-      <CustomTitleBar />
-
-      {/* ── BARRA SUPERIOR DE NAVEGAÇÃO ENTRE MÓDULOS ── */}
-      <div className="bg-industrial-surface/80 border-b border-industrial-border px-6 py-2 flex items-center justify-between shrink-0">
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('routine')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all border ${
-              activeTab === 'routine'
-                ? 'bg-industrial-card border-industrial-accent text-industrial-accent shadow-sm'
-                : 'border-transparent text-industrial-muted hover:text-slate-200 hover:bg-industrial-card/50'
-            }`}
-          >
-            <Clock size={14} />
-            <span>ROTINA & FOCO</span>
-            {pendingTasks > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-industrial-accent/20 text-industrial-accent text-[10px]">
-                {pendingTasks}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('finance')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all border ${
-              activeTab === 'finance'
-                ? 'bg-industrial-card border-industrial-accent text-industrial-accent shadow-sm'
-                : 'border-transparent text-industrial-muted hover:text-slate-200 hover:bg-industrial-card/50'
-            }`}
-          >
-            <Wallet size={14} />
-            <span>FINANÇAS & CONTROLE</span>
-            <span className="ml-1 text-[11px] text-industrial-accent font-semibold hidden sm:inline">
-              {formatCentsToBRL(consolidated.total_balance_cents)}
-            </span>
-          </button>
-        </div>
-
-        {/* Metadados Técnicos do Sistema */}
-        <div className="flex items-center space-x-3 text-[11px] font-mono text-industrial-subtle">
-          <div className="flex items-center space-x-1 hidden sm:flex">
-            <Database size={12} className="text-industrial-accent" />
-            <span>agente_pedro.db</span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <ShieldCheck size={12} className="text-industrial-accent" />
-            <span>ZERO IA / OFFLINE</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── ÁREA DE CONTEÚDO PRINCIPAL (SCROLLÁVEL) ── */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === 'routine' ? <RoutineModule /> : <FinanceModule />}
-      </div>
-
-      {/* ── RODAPÉ INDUSTRIAL ── */}
-      <div className="h-7 bg-industrial-surface border-t border-industrial-border/70 px-4 flex items-center justify-between text-[11px] font-mono text-industrial-subtle shrink-0">
-        <div className="flex items-center space-x-3">
-          <span className="flex items-center space-x-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-industrial-accent" />
-            <span className="text-slate-300">Agente Pedro v0.1.0</span>
-          </span>
-          <span className="hidden sm:inline">|</span>
-          <span className="hidden sm:inline">Engine: Tauri 2 + React 19</span>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <HardDrive size={11} className="text-industrial-accent" />
-          <span>SQLite WAL Ativo</span>
-        </div>
-      </div>
+export function MainDashboard() {
+  const initial = new URLSearchParams(location.search).get('page');
+  const [page, setPage] = useState<Page>(isPage(initial) ? initial : 'home');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const navigate = (next: Page) => {
+    setPage(next);
+    const url = new URL(location.href); url.searchParams.set('page', next); history.replaceState(null, '', url);
+    window.dispatchEvent(new CustomEvent('pedro:page', { detail: next }));
+    if ('__TAURI_INTERNALS__' in window) void emit('pedro:page', next).catch(() => {});
+  };
+  useEffect(() => {
+    const receive = (event: Event) => { const target = (event as CustomEvent).detail; if (isPage(target)) navigate(target); };
+    const key = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        if (document.querySelector('[role="dialog"]')) return;
+        event.preventDefault(); setQuery(''); setSearchOpen(true);
+      }
+    };
+    window.addEventListener('pedro:navigate', receive); window.addEventListener('keydown', key);
+    return () => { window.removeEventListener('pedro:navigate', receive); window.removeEventListener('keydown', key); };
+  }, []);
+  const commands = PAGES.filter(p => (p.name + ' ' + p.detail).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  return <div className="app-shell">
+    <CustomTitleBar onSearch={() => { setQuery(''); setSearchOpen(true); }} />
+    <div className="app-layout">
+      <aside className="sidebar">
+        <div className="sidebar-brand"><span className="brand-mark">p<span /></span><div><strong>Pedro</strong><span>Seu espaço pessoal</span></div></div>
+        <span className="sidebar-label">Sua rotina</span>
+        <nav aria-label="Áreas do aplicativo">{PAGES.map(({ id, name, Icon }) =>
+          <button key={id} type="button" className={'nav-item ' + (page === id ? 'active' : '')} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={19} aria-hidden="true" /><span>{name}</span>{page === id && <span className="nav-active-dot" />}</button>)}</nav>
+        <div className="sidebar-note"><HardDrive size={17} /><p>Tudo que você registra fica neste dispositivo.</p></div>
+        <button type="button" className="sidebar-search" onClick={() => { setQuery(''); setSearchOpen(true); }}><Command size={16} /><span>Buscar uma ação</span><kbd>Ctrl K</kbd></button>
+      </aside>
+      <main className="app-main" id="main-content"><div key={page} className="page-content">
+        {page === 'home' && <HomePage onNavigate={navigate} />}
+        {page === 'routine' && <RoutineModule />}
+        {page === 'finance' && <FinanceModule />}
+        {page === 'appearance' && <AppearancePage />}
+      </div></main>
     </div>
-  );
-};
+    {searchOpen && <Dialog title="Por onde vamos começar?" description="Encontre uma área para cuidar da sua rotina." onClose={() => setSearchOpen(false)}>
+      <label htmlFor="command-search" className="sr-only">Buscar área ou ação</label><input id="command-search" className="field" placeholder="Tarefas, foco, finanças, aparência…" value={query} onChange={e => setQuery(e.target.value)} />
+      <div className="command-list">{commands.map(({ id, name, detail, Icon }) => <button key={id} type="button" className="command-item" onClick={() => { setSearchOpen(false); navigate(id); }}><Icon size={21} /><span><strong>{name}</strong><small>{detail}</small></span><ArrowRight size={17} /></button>)}
+        {!commands.length && <p className="empty-state">Nenhuma área encontrada. Tente “foco” ou “finanças”.</p>}</div>
+    </Dialog>}
+  </div>;
+}

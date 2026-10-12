@@ -1,105 +1,66 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { loadApplication, MemoryStorage } from './database-harness.mjs';
 
-const DB_PATH = join(process.cwd(), 'agente_pedro.db');
-
-test('Validação de Ciclo de Vida e Persistência do Agente Pedro', async (t) => {
-  const nonce = Date.now();
-  const taskId = `task-pers-${nonce}`;
-  const habitId = `habit-pers-${nonce}`;
-  const pomoId = `pomo-pers-${nonce}`;
-  const accId = `acc-pers-${nonce}`;
-  const txId = `tx-pers-${nonce}`;
-  const budgetId = `bg-pers-${nonce}`;
-  const budgetCategory = `Serviços-${nonce}`;
-  const now = new Date().toISOString();
-
-  // ETAPA 1: Abrir banco, gravar registros e fechar aplicação
-  await t.test('Gravação dos registros no banco SQLite', () => {
-    const db1 = new DatabaseSync(DB_PATH);
-
-    // Grava Tarefa Prioritária
-    db1.prepare(`
-      INSERT INTO tasks (id, title, priority, completed, due_date, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(taskId, 'Tarefa de Teste Persistente', 'high', 0, '2026-10-07', now);
-
-    // Grava Hábito com Streak
-    db1.prepare(`
-      INSERT INTO habits (id, name, frequency, streak_count, last_completed, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(habitId, 'Hábito de Teste Persistente', 'daily', 7, '2026-10-07', now);
-
-    // Grava Sessão Pomodoro concluída de 25 minutos
-    db1.prepare(`
-      INSERT INTO pomodoro_sessions (id, duration_minutes, completed_at)
-      VALUES (?, ?, ?)
-    `).run(pomoId, 25, now);
-
-    // Grava Conta
-    db1.prepare(`
-      INSERT INTO accounts (id, name, type, balance_cents, color, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(accId, 'Banco Digital Persistente', 'checking', 100000, '#10b981', now);
-
-    // Grava Transação em centavos (R$ 150,00 -> 15000 centavos)
-    db1.prepare(`
-      INSERT INTO transactions (id, account_id, description, amount_cents, type, category, transaction_date, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(txId, accId, 'Assinatura Nuvem', 15000, 'expense', budgetCategory, '2026-10-07', now);
-
-    // Atualiza saldo transacional
-    db1.prepare('UPDATE accounts SET balance_cents = balance_cents - ? WHERE id = ?').run(15000, accId);
-
-    // Grava Orçamento Mensal
-    db1.prepare(`
-      INSERT OR REPLACE INTO budgets (id, category, limit_cents, month_year, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(budgetId, budgetCategory, 50000, '2026-10', now);
-
-    // Fecha a conexão (simulando shutdown da aplicação)
-    db1.close();
+for (const backend of ['browser', 'sqlite']) {
+  test(`${backend}: reabrir a aplicação preserva registros, saldo e identidade de foco`, async (t) => {
+    const storage = new MemoryStorage();
+    const directory = await mkdtemp(join(tmpdir(), 'pedro-reopen-'));
+    const path = join(directory, 'isolated.db');
+    let db = backend === 'sqlite' ? new DatabaseSync(path) : null;
+    t.after(async () => { db?.close(); await rm(directory, { recursive: true, force: true }); });
+    const first = await loadApplication(t, { storage, nativeDb: db });
+    const task = await first.app.insertTask('Revisão', 'high', '2026-10-20');
+    await first.app.updateTaskCompletion(task.id, true);
+    const habit = await first.app.insertHabit('Leitura');
+    await first.app.registerHabitCompletion(habit.id);
+    const session = await first.app.persistPomodoroSession(25, 'persisted-session');
+    const account = await first.app.insertAccount('Conta', 'checking', 100000);
+    await first.app.insertTransaction({ account_id: account.id, description: 'Assinatura', amount_cents: 15000, type: 'expense', category: 'Serviços', transaction_date: '2026-10-10' });
+    await first.app.insertOrUpdateBudget('Serviços', 50000, '2026-10');
+    const tasksBeforeClose = await first.app.fetchTasks();
+    db?.close();
+    db = backend === 'sqlite' ? new DatabaseSync(path) : null;
+    const second = await loadApplication(t, { storage, nativeDb: db });
+    assert.deepEqual(await second.app.fetchTasks(), tasksBeforeClose);
+    assert.equal((await second.app.fetchHabits())[0].streak_count, 1);
+    assert.deepEqual((await second.app.fetchPomodoroSessions())[0], session);
+    assert.equal((await second.app.fetchAccounts())[0].balance_cents, 85000);
+    assert.equal((await second.app.fetchTransactions())[0].amount_cents, 15000);
+    assert.equal((await second.app.fetchBudgets('2026-10'))[0].limit_cents, 50000);
+    await second.app.persistPomodoroSession(25, session.id);
+    assert.equal((await second.app.fetchPomodoroSessions()).length, 1);
   });
+}
 
-  // ETAPA 2: Reabertura do banco e asserção de dados
-  await t.test('Reabertura da aplicação e verificação de persistência real', () => {
-    const db2 = new DatabaseSync(DB_PATH);
-
-    // Consulta Tarefa
-    const task = db2.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
-    assert.ok(task, 'A tarefa deve continuar existindo após fechar a aplicação');
-    assert.equal(task.title, 'Tarefa de Teste Persistente');
-    assert.equal(task.priority, 'high');
-    assert.equal(task.completed, 0);
-
-    // Consulta Hábito
-    const habit = db2.prepare('SELECT * FROM habits WHERE id = ?').get(habitId);
-    assert.ok(habit, 'O hábito deve continuar existindo após reiniciar');
-    assert.equal(habit.streak_count, 7);
-
-    // Consulta Pomodoro
-    const pomo = db2.prepare('SELECT * FROM pomodoro_sessions WHERE id = ?').get(pomoId);
-    assert.ok(pomo, 'A sessão Pomodoro de 25 min deve estar persistida');
-    assert.equal(pomo.duration_minutes, 25);
-
-    // Consulta Conta e Saldo Materializado
-    const account = db2.prepare('SELECT * FROM accounts WHERE id = ?').get(accId);
-    assert.ok(account, 'A conta deve continuar existindo');
-    assert.equal(account.balance_cents, 85000, 'Saldo deve permanecer exatamente 85000 centavos (R$ 850,00)');
-
-    // Consulta Transação
-    const tx = db2.prepare('SELECT * FROM transactions WHERE id = ?').get(txId);
-    assert.ok(tx, 'A transação deve continuar existindo intacta');
-    assert.equal(tx.amount_cents, 15000);
-    assert.equal(tx.type, 'expense');
-
-    // Consulta Orçamento
-    const budget = db2.prepare('SELECT * FROM budgets WHERE id = ?').get(budgetId);
-    assert.ok(budget, 'O orçamento mensal deve persistir');
-    assert.equal(budget.limit_cents, 50000);
-
-    db2.close();
+for (const backend of ['browser', 'sqlite']) {
+  test(`${backend}: sequência de hábito usa o calendário local e reinicia após intervalo`, async (t) => {
+    const timezone = process.env.TZ;
+    process.env.TZ = 'America/Sao_Paulo';
+    const RealDate = Date;
+    let instant = '2026-10-13T01:30:00.000Z';
+    globalThis.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [instant])); }
+      static now() { return new RealDate(instant).getTime(); }
+    };
+    t.after(() => { globalThis.Date = RealDate; if (timezone === undefined) delete process.env.TZ; else process.env.TZ = timezone; });
+    const directory = await mkdtemp(join(tmpdir(), 'pedro-local-date-'));
+    const db = backend === 'sqlite' ? new DatabaseSync(join(directory, 'local-date.db')) : null;
+    t.after(async () => { db?.close(); await rm(directory, { recursive: true, force: true }); });
+    const { app } = await loadApplication(t, { nativeDb: db });
+    assert.equal(app.localDate(), '2026-10-12');
+    assert.equal(app.localMonth(new RealDate('2026-11-01T01:30:00Z')), '2026-10');
+    const habit = await app.insertHabit('Rotina');
+    const adapter = await app.getDatabase();
+    await adapter.execute('UPDATE habits SET streak_count = ?, last_completed = ?, updated_at = ? WHERE id = ?', [7, '2026-10-11', instant, habit.id]);
+    const completion = await app.registerHabitCompletion(habit.id);
+    assert.deepEqual(completion, { streak_count: 8, last_completed: '2026-10-12' });
+    assert.equal((await app.registerHabitCompletion(habit.id)).streak_count, 8);
+    instant = '2026-10-16T01:30:00.000Z';
+    assert.deepEqual(await app.registerHabitCompletion(habit.id), { streak_count: 1, last_completed: '2026-10-15' });
   });
-});
+}

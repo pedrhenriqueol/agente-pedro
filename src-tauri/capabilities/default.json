@@ -1,8 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissões padrão para as janelas island e main",
-  "windows": ["island", "main"],
+  "description": "Permissões das janelas de painel, ilha e dock do Agente Pedro",
+  "windows": [
+    "island",
+    "main",
+    "dock"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -21,6 +25,8 @@
     "sql:allow-select",
     "global-shortcut:default",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized"
   ]
 }

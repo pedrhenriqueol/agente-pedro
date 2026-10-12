@@ -1,236 +1,131 @@
-import React, { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { Play, Pause, RotateCcw, ChevronDown, ChevronUp, Layers, CheckSquare } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, Coffee, Pause, Play, RefreshCw, RotateCcw, Sparkles, Wallet } from 'lucide-react';
 import { useFocusStore } from '../stores/useFocusStore';
 import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
+import { usePreferencesStore } from '../stores/usePreferencesStore';
+import { requestPage, syncIslandSize } from '../lib/desktop';
+import '../styles/desktop.css';
 
-export const DynamicIsland: React.FC = () => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [currentTime, setCurrentTime] = useState('');
+function formatTimer(seconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  return `${String(Math.floor(safeSeconds / 60)).padStart(2, '0')}:${String(safeSeconds % 60).padStart(2, '0')}`;
+}
 
-  const {
-    pomodoroState,
-    currentMode,
-    remainingSeconds,
-    startPomodoro,
-    pausePomodoro,
-    resumePomodoro,
-    resetPomodoro,
-    tasks,
-    loadInitialData,
-  } = useFocusStore();
+export function DynamicIsland() {
+  const [expanded, setExpanded] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+  const [error, setError] = useState('');
+  const requestedExpansion = useRef(false);
+  const resizeSequence = useRef(0);
+  const resizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compactExpander = useRef<HTMLButtonElement>(null);
+  const expandedExpander = useRef<HTMLButtonElement>(null);
+  const wasExpanded = useRef(false);
+  const focus = useFocusStore();
+  const { consolidated, accounts } = useFinanceStore();
+  const { islandIdle, islandOpacity, reduceMotion } = usePreferencesStore();
+  const active = focus.pomodoroState === 'focus' || focus.pomodoroState === 'break';
+  const paused = focus.pomodoroState === 'paused';
+  const saving = focus.sessionSaveState === 'saving';
+  const saveFailed = focus.sessionSaveState === 'error';
+  const recordPending = saving || saveFailed;
+  const finished = focus.pomodoroState === 'completed';
+  const selectedTask = focus.tasks.find((task) => task.id === focus.selectedTaskId && task.completed === 0);
+  const pendingTasks = focus.tasks.filter((task) => task.completed === 0).length;
+  const progress = focus.totalDurationSeconds > 0 ? 1 - focus.remainingSeconds / focus.totalDurationSeconds : 0;
+  const modeName = focus.currentMode === 'focus' ? 'Foco' : 'Pausa';
+  const status = saveFailed ? 'Sessão concluída · registro pendente' : saving ? 'Registrando sua sessão…' : finished ? 'Sessão concluída' : paused ? 'Sessão pausada' : active ? `${modeName} em andamento` : 'Um passo de cada vez';
 
-  const { consolidated, loadFinancialData } = useFinanceStore();
-
-  // Relógio digital em tempo real
   useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      setCurrentTime(`${hours}:${minutes}`);
+    const interval = setInterval(() => setCurrentTime(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })), 10000);
+    return () => {
+      clearInterval(interval);
+      if (resizeTimer.current) clearTimeout(resizeTimer.current);
+      resizeSequence.current += 1;
     };
-    updateClock();
-    const interval = setInterval(updateClock, 1000);
-    return () => clearInterval(interval);
   }, []);
 
-  // Carrega dados iniciais das stores
   useEffect(() => {
-    loadInitialData();
-    loadFinancialData();
-  }, [loadInitialData, loadFinancialData]);
+    if (expanded) expandedExpander.current?.focus({ preventScroll: true });
+    else if (wasExpanded.current) compactExpander.current?.focus({ preventScroll: true });
+    wasExpanded.current = expanded;
+  }, [expanded]);
 
-  // Sincroniza redimensionamento dinâmico da janela nativa do Tauri
-  const toggleExpansion = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const nextState = !isExpanded;
-    setIsExpanded(nextState);
+  useEffect(() => {
+    if (!error) return;
+    const timeout = setTimeout(() => setError(''), 4500);
+    return () => clearTimeout(timeout);
+  }, [error]);
 
-    try {
-      if (nextState) {
-        await invoke('expandir_ilha', { altura: 144.0 });
-      } else {
-        await invoke('recolher_ilha');
+  async function toggleExpansion() {
+    const next = !requestedExpansion.current;
+    requestedExpansion.current = next;
+    const sequence = ++resizeSequence.current;
+    if (resizeTimer.current) clearTimeout(resizeTimer.current);
+    setError('');
+    if (next) {
+      try {
+        // Grow the native frame first so the entrance is never clipped by its old bounds.
+        await syncIslandSize(true);
+        if (sequence === resizeSequence.current) setExpanded(true);
+      } catch {
+        requestedExpansion.current = false;
+        setError('Não foi possível expandir a ilha.');
       }
-    } catch {
-      // Fallback em ambiente de preview web
+    } else {
+      setExpanded(false);
+      // Keep the larger native frame until the visual exit has finished.
+      resizeTimer.current = setTimeout(() => {
+        syncIslandSize(false).catch(() => setError('Não foi possível recolher a ilha.'));
+      }, reduceMotion ? 0 : 300);
     }
-  };
+  }
 
-  const handleOpenConsole = async () => {
-    try {
-      await invoke('alternar_console');
-    } catch {
-      console.log('[DynamicIsland] Alternar console invocado');
-    }
-  };
+  async function openPage(page: 'home' | 'routine' | 'finance') {
+    try { await requestPage(page); setError(''); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o painel.'); }
+  }
 
-  const formatTimer = (totalSecs: number) => {
-    const mins = Math.floor(totalSecs / 60);
-    const secs = totalSecs % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
+  function controlTimer() {
+    if (saveFailed) { void focus.refreshData().catch(() => {}); }
+    else if (active) focus.pausePomodoro();
+    else if (paused) focus.resumePomodoro();
+    else focus.startPomodoro(focus.currentMode);
+  }
 
-  const pendingTasksCount = tasks.filter((t) => t.completed === 0).length;
+  const compactMode = active || paused || finished ? 'focus' : islandIdle;
+  const styles = { '--widget-opacity': islandOpacity } as CSSProperties;
 
   return (
-    <div
-      data-tauri-drag-region
-      className={`w-[380px] transition-all duration-200 select-none overflow-hidden rounded-full border border-industrial-border shadow-2xl bg-industrial-bg/95 backdrop-blur-md text-slate-100 ${
-        isExpanded ? 'h-[144px] rounded-2xl p-3' : 'h-[48px] px-3.5 flex items-center justify-between'
-      }`}
-      style={{ boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.7)' }}
-    >
-      {!isExpanded ? (
-        /* ── MODO COMPACTO (48px) ── */
-        <div className="w-full flex items-center justify-between" onClick={handleOpenConsole}>
-          {/* Relógio */}
-          <div className="flex items-center space-x-1.5 cursor-pointer">
-            <span className="font-mono text-xs font-semibold tracking-wider text-slate-300">
-              {currentTime}
-            </span>
-          </div>
-
-          {/* Pomodoro Status */}
-          <div className="flex items-center space-x-2 px-2.5 py-1 rounded-full bg-industrial-surface border border-industrial-border/60">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                pomodoroState === 'focus'
-                  ? 'bg-industrial-accent animate-pulse'
-                  : pomodoroState === 'break'
-                  ? 'bg-blue-400 animate-pulse'
-                  : pomodoroState === 'paused'
-                  ? 'bg-industrial-warning'
-                  : 'bg-industrial-subtle'
-              }`}
-            />
-            <span className="font-mono text-xs font-medium text-slate-200">
-              {formatTimer(remainingSeconds)}
-            </span>
-          </div>
-
-          {/* Resumo Financeiro & Expansor */}
-          <div className="flex items-center space-x-2">
-            <span className="font-mono text-[11px] font-semibold text-industrial-accent">
-              {formatCentsToBRL(consolidated.total_balance_cents)}
-            </span>
-
-            <button
-              type="button"
-              onClick={toggleExpansion}
-              className="p-1 rounded-full hover:bg-industrial-hover text-industrial-muted hover:text-slate-100 transition-colors"
-              title="Expandir Ilha Dinâmica"
-            >
-              <ChevronDown size={14} />
-            </button>
-          </div>
+    <div className="desktop-widget-shell island-shell" style={styles} data-reduce-motion={reduceMotion}>
+      <section className={`pedro-island ${expanded ? 'is-expanded' : ''}`} aria-label="Ilha do Pedro" onKeyDown={(event) => { if (expanded && event.key === 'Escape') { event.preventDefault(); void toggleExpansion(); } }}>
+        <div className="island-compact" aria-hidden={expanded} inert={expanded || undefined}>
+          <button className="island-identity" type="button" onClick={() => openPage('home')} aria-label="Abrir Hoje no painel do Pedro" title="Abrir o painel">
+            <span className="pedro-widget-mark"><Sparkles size={16} aria-hidden="true" /></span>
+            <span>{currentTime}</span>
+          </button>
+          <button className="island-context" type="button" onClick={toggleExpansion} aria-expanded={expanded} aria-controls="island-details" aria-label="Expandir ilha do Pedro">
+            {compactMode === 'focus' ? <><span className={`island-status-dot ${active ? 'is-active' : ''}`} /><span>{saveFailed ? 'Registro pendente' : saving ? 'Registrando…' : finished ? 'Concluído' : formatTimer(focus.remainingSeconds)}</span><small>{paused ? 'Pausado' : modeName}</small></> : compactMode === 'balance' ? <><Wallet size={14} /><span>{accounts.length ? formatCentsToBRL(consolidated.total_balance_cents) : 'Suas finanças'}</span></> : compactMode === 'minimal' ? <span>Pedro</span> : <><span className="island-status-dot" /><span>Seu dia, com calma</span></>}
+          </button>
+          <button ref={compactExpander} className="widget-icon-button island-expander" type="button" onClick={toggleExpansion} aria-expanded={expanded} aria-controls="island-details" aria-label="Expandir ilha" title="Expandir ilha"><ChevronDown size={16} /></button>
         </div>
-      ) : (
-        /* ── MODO EXPANDIDO (144px) ── */
-        <div className="flex flex-col h-full justify-between">
-          {/* Cabeçalho da Ilha Expandida */}
-          <div className="flex items-center justify-between border-b border-industrial-border/60 pb-2">
-            <div className="flex items-center space-x-2 cursor-pointer" onClick={handleOpenConsole}>
-              <Layers size={13} className="text-industrial-accent" />
-              <span className="text-[11px] font-mono font-bold tracking-wider text-slate-200">
-                ILHA DINÂMICA
-              </span>
-              <span className="text-[10px] font-mono px-1.5 rounded bg-industrial-surface text-industrial-muted">
-                {currentTime}
-              </span>
-            </div>
 
-            <div className="flex items-center space-x-1">
-              <button
-                type="button"
-                onClick={handleOpenConsole}
-                className="text-[10px] font-mono px-2 py-0.5 rounded bg-industrial-hover hover:bg-industrial-border text-slate-300 transition-colors mr-1"
-              >
-                Abrir Console
-              </button>
-              <button
-                type="button"
-                onClick={toggleExpansion}
-                className="p-1 rounded-full hover:bg-industrial-hover text-industrial-muted hover:text-slate-100 transition-colors"
-                title="Recolher Ilha Dinâmica"
-              >
-                <ChevronUp size={14} />
-              </button>
-            </div>
+        <div id="island-details" className="island-details" aria-hidden={!expanded} inert={!expanded || undefined}>
+          <header className="island-expanded-header">
+            <div className="island-heading"><span className="pedro-widget-mark"><Sparkles size={16} aria-hidden="true" /></span><div><strong>Pedro</strong><span>{status}</span></div></div>
+            <div className="island-header-actions"><button className="widget-icon-button" type="button" onClick={() => openPage('home')} title="Abrir painel" aria-label="Abrir painel"><ArrowUpRight size={17} /></button><button ref={expandedExpander} className="widget-icon-button" type="button" onClick={toggleExpansion} title="Recolher ilha" aria-label="Recolher ilha"><ChevronUp size={17} /></button></div>
+          </header>
+
+          <div className="island-focus-block">
+            <div className="island-focus-top"><div className="island-mode-picker" aria-label="Tipo de sessão"><button type="button" className={focus.currentMode === 'focus' ? 'is-selected' : ''} onClick={() => focus.setPomodoroMode('focus')} disabled={active || paused || recordPending}>Foco</button><button type="button" className={focus.currentMode === 'break' ? 'is-selected' : ''} onClick={() => focus.setPomodoroMode('break')} disabled={active || paused || recordPending}><Coffee size={12} />Pausa</button></div><span className="island-clock">{currentTime}</span></div>
+            <div className="island-timer-line"><div><span className="island-timer" role="timer" aria-label={`Tempo restante: ${formatTimer(focus.remainingSeconds)}`}>{formatTimer(focus.remainingSeconds)}</span><p className="island-task-name" title={selectedTask?.title}>{saveFailed ? 'Tente registrar novamente pelo botão ao lado.' : selectedTask?.title || (focus.currentMode === 'break' ? 'Respire. Você merece uma pausa.' : 'Escolha uma tarefa ou apenas comece.')}</p></div><div className="island-timer-actions"><button className="island-play-button" type="button" onClick={controlTimer} disabled={saving || (saveFailed && focus.isLoading)} aria-label={saveFailed ? 'Tentar registrar sessão novamente' : active ? 'Pausar sessão' : paused ? 'Continuar sessão' : 'Iniciar sessão'} title={saveFailed ? 'Tentar registrar novamente' : active ? 'Pausar' : paused ? 'Continuar' : 'Iniciar'}>{saveFailed ? <RefreshCw size={17} /> : active ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button><button className="widget-icon-button" type="button" onClick={focus.resetPomodoro} disabled={recordPending} aria-label="Reiniciar sessão" title="Reiniciar"><RotateCcw size={15} /></button></div></div>
+            <div className="island-progress" role="progressbar" aria-label="Progresso da sessão" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.max(0, Math.min(1, progress)) * 100)}><span style={{ transform: `scaleX(${Math.max(0, Math.min(1, progress))})` }} /></div>
           </div>
 
-          {/* Linha Central: Controles Rápidos Pomodoro */}
-          <div className="flex items-center justify-between py-1 px-1">
-            <div className="flex items-center space-x-2">
-              <span
-                className={`text-xs font-mono font-semibold px-2 py-0.5 rounded ${
-                  currentMode === 'focus'
-                    ? 'bg-industrial-accent/20 text-industrial-accent'
-                    : 'bg-blue-500/20 text-blue-400'
-                }`}
-              >
-                {currentMode === 'focus' ? 'FOCO' : 'PAUSA'}
-              </span>
-              <span className="font-mono text-base font-bold tracking-wider text-slate-100">
-                {formatTimer(remainingSeconds)}
-              </span>
-            </div>
-
-            <div className="flex items-center space-x-1.5">
-              {pomodoroState === 'idle' || pomodoroState === 'completed' ? (
-                <button
-                  type="button"
-                  onClick={() => startPomodoro(currentMode)}
-                  className="p-1.5 rounded bg-industrial-accent text-industrial-bg hover:bg-industrial-accentHover font-semibold transition-colors"
-                  title="Iniciar"
-                >
-                  <Play size={13} fill="currentColor" />
-                </button>
-              ) : pomodoroState === 'paused' ? (
-                <button
-                  type="button"
-                  onClick={resumePomodoro}
-                  className="p-1.5 rounded bg-industrial-accent text-industrial-bg hover:bg-industrial-accentHover font-semibold transition-colors"
-                  title="Continuar"
-                >
-                  <Play size={13} fill="currentColor" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={pausePomodoro}
-                  className="p-1.5 rounded bg-industrial-warning text-industrial-bg hover:opacity-90 font-semibold transition-colors"
-                  title="Pausar"
-                >
-                  <Pause size={13} fill="currentColor" />
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={resetPomodoro}
-                className="p-1.5 rounded bg-industrial-surface border border-industrial-border text-industrial-muted hover:text-slate-100 transition-colors"
-                title="Reiniciar"
-              >
-                <RotateCcw size={13} />
-              </button>
-            </div>
-          </div>
-
-          {/* Rodapé: Resumo de Tarefas e Saldo */}
-          <div className="flex items-center justify-between pt-1 border-t border-industrial-border/60 text-[11px] font-mono text-industrial-muted">
-            <div className="flex items-center space-x-1.5">
-              <CheckSquare size={12} className="text-industrial-accent" />
-              <span>{pendingTasksCount} pendentes hoje</span>
-            </div>
-
-            <div className="text-industrial-accent font-semibold">
-              {formatCentsToBRL(consolidated.total_balance_cents)}
-            </div>
-          </div>
+          <footer className="island-summary"><button type="button" onClick={() => openPage('routine')}><CircleCheck size={14} /><span>{pendingTasks ? `${pendingTasks} ${pendingTasks === 1 ? 'tarefa pendente' : 'tarefas pendentes'}` : 'Seu próximo passo'}</span><ArrowUpRight size={12} /></button><button type="button" onClick={() => openPage('finance')}><Wallet size={14} /><span>{accounts.length ? formatCentsToBRL(consolidated.total_balance_cents) : 'Finanças'}</span></button></footer>
         </div>
-      )}
+      </section>
+      {error && <p className="widget-error" role="alert">{error}</p>}
     </div>
   );
-};
+}

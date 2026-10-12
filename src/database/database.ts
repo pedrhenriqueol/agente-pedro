@@ -1,4 +1,7 @@
 import Database from '@tauri-apps/plugin-sql';
+import { BrowserSqlFallback } from './browser';
+import { SCHEMA_STATEMENTS } from './schema';
+import { isLocalDate, isLocalMonth, localDate, localMonth, previousLocalDate } from './date';
 import type {
   Account,
   Budget,
@@ -19,356 +22,46 @@ export interface SqlDatabase {
   select<T>(query: string, bindValues?: unknown[]): Promise<T>;
 }
 
-let dbInstance: SqlDatabase | null = null;
+let databasePromise: Promise<SqlDatabase> | null = null;
 
-// Fallback de desenvolvimento em memória/localStorage para preview sem runtime Tauri nativo
-class BrowserSqlFallback implements SqlDatabase {
-  private storageKey = 'agente_pedro_local_db';
-  private tables: {
-    tasks: Task[];
-    habits: Habit[];
-    pomodoro_sessions: PomodoroSession[];
-    accounts: Account[];
-    transactions: Transaction[];
-    budgets: Budget[];
-  };
-
-  constructor() {
-    const saved = localStorage.getItem(this.storageKey);
-    if (saved) {
-      try {
-        this.tables = JSON.parse(saved);
-      } catch {
-        this.tables = this.initialData();
-      }
-    } else {
-      this.tables = this.initialData();
-      this.save();
-    }
+/** Inicialização compartilhada entre chamadas concorrentes; erros nativos nunca viram dados de preview. */
+export async function getDatabase(): Promise<SqlDatabase> {
+  if (!databasePromise) {
+    databasePromise = initializeDatabase().catch((error: unknown) => {
+      databasePromise = null;
+      throw error;
+    });
   }
+  return databasePromise;
+}
 
-  private initialData() {
-    return {
-      tasks: [
-        {
-          id: 'task-1',
-          title: 'Configurar ambiente e janelas do Agente Pedro',
-          priority: 'high' as TaskPriority,
-          completed: 1,
-          due_date: new Date().toISOString().split('T')[0],
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        },
-        {
-          id: 'task-2',
-          title: 'Validar persistência local em centavos no SQLite',
-          priority: 'high' as TaskPriority,
-          completed: 0,
-          due_date: new Date().toISOString().split('T')[0],
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        },
-      ],
-      habits: [
-        {
-          id: 'habit-1',
-          name: 'Revisão matinal e foco profundo',
-          frequency: 'daily',
-          streak_count: 5,
-          last_completed: null,
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        },
-      ],
-      pomodoro_sessions: [],
-      accounts: [
-        {
-          id: 'acc-1',
-          name: 'Conta Principal',
-          type: 'checking' as const,
-          balance_cents: 250000, // R$ 2.500,00
-          color: '#10b981',
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        },
-        {
-          id: 'acc-2',
-          name: 'Reserva de Emergência',
-          type: 'savings' as const,
-          balance_cents: 1000000, // R$ 10.000,00
-          color: '#3b82f6',
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        },
-      ],
-      transactions: [
-        {
-          id: 'tx-1',
-          account_id: 'acc-1',
-          description: 'Aporte inicial verificado',
-          amount_cents: 250000,
-          type: 'income' as const,
-          category: 'Aporte',
-          installment_group_id: null,
-          installment_number: null,
-          installment_total: null,
-          transaction_date: new Date().toISOString().split('T')[0],
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        },
-      ],
-      budgets: [
-        {
-          id: 'bg-1',
-          category: 'Alimentação',
-          limit_cents: 80000, // R$ 800,00
-          month_year: new Date().toISOString().slice(0, 7),
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        },
-      ],
-    };
+async function initializeDatabase(): Promise<SqlDatabase> {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    return new BrowserSqlFallback();
   }
-
-  private save() {
-    localStorage.setItem(this.storageKey, JSON.stringify(this.tables));
-  }
-
-  async execute(query: string, bindValues: unknown[] = []): Promise<{ rowsAffected: number; lastInsertId: number }> {
-    const q = query.trim().toUpperCase();
-
-    if (q.startsWith('INSERT INTO TASKS')) {
-      const [id, title, priority, completed, due_date, created_at] = bindValues as [string, string, TaskPriority, number, string | null, string];
-      this.tables.tasks.push({ id, title, priority, completed: completed || 0, due_date, created_at, updated_at: null });
-      this.save();
-      return { rowsAffected: 1, lastInsertId: 1 };
-    }
-
-    if (q.startsWith('UPDATE TASKS SET COMPLETED')) {
-      const [completed, updated_at, id] = bindValues as [number, string, string];
-      const task = this.tables.tasks.find((t) => t.id === id);
-      if (task) {
-        task.completed = completed;
-        task.updated_at = updated_at;
-        this.save();
-      }
-      return { rowsAffected: 1, lastInsertId: 0 };
-    }
-
-    if (q.startsWith('DELETE FROM TASKS')) {
-      const [id] = bindValues as [string];
-      this.tables.tasks = this.tables.tasks.filter((t) => t.id !== id);
-      this.save();
-      return { rowsAffected: 1, lastInsertId: 0 };
-    }
-
-    if (q.startsWith('INSERT INTO HABITS')) {
-      const [id, name, frequency, created_at] = bindValues as [string, string, string, string];
-      this.tables.habits.push({ id, name, frequency, streak_count: 0, last_completed: null, created_at, updated_at: null });
-      this.save();
-      return { rowsAffected: 1, lastInsertId: 1 };
-    }
-
-    if (q.startsWith('UPDATE HABITS SET STREAK_COUNT')) {
-      const [streak, last, updated_at, id] = bindValues as [number, string, string, string];
-      const habit = this.tables.habits.find((h) => h.id === id);
-      if (habit) {
-        habit.streak_count = streak;
-        habit.last_completed = last;
-        habit.updated_at = updated_at;
-        this.save();
-      }
-      return { rowsAffected: 1, lastInsertId: 0 };
-    }
-
-    if (q.startsWith('INSERT INTO POMODORO_SESSIONS')) {
-      const [id, duration, completed_at] = bindValues as [string, number, string];
-      this.tables.pomodoro_sessions.push({ id, duration_minutes: duration, completed_at });
-      this.save();
-      return { rowsAffected: 1, lastInsertId: 1 };
-    }
-
-    if (q.startsWith('INSERT INTO ACCOUNTS')) {
-      const [id, name, type, balance_cents, color, created_at] = bindValues as [string, string, any, number, string, string];
-      this.tables.accounts.push({ id, name, type, balance_cents, color, created_at, updated_at: null });
-      this.save();
-      return { rowsAffected: 1, lastInsertId: 1 };
-    }
-
-    if (q.startsWith('INSERT INTO TRANSACTIONS')) {
-      const [id, account_id, description, amount_cents, type, category, inst_grp, inst_num, inst_tot, tx_date, created_at] = bindValues as any[];
-      this.tables.transactions.push({
-        id,
-        account_id,
-        description,
-        amount_cents,
-        type,
-        category,
-        installment_group_id: inst_grp ?? null,
-        installment_number: inst_num ?? null,
-        installment_total: inst_tot ?? null,
-        transaction_date: tx_date,
-        created_at,
-        updated_at: null,
-      });
-
-      // Atualiza saldo da conta transacionalmente
-      const acc = this.tables.accounts.find((a) => a.id === account_id);
-      if (acc) {
-        if (type === 'income') {
-          acc.balance_cents += amount_cents;
-        } else {
-          acc.balance_cents -= amount_cents;
-        }
-      }
-
-      this.save();
-      return { rowsAffected: 1, lastInsertId: 1 };
-    }
-
-    return { rowsAffected: 1, lastInsertId: 0 };
-  }
-
-  async select<T>(query: string, _bindValues: unknown[] = []): Promise<T> {
-    const q = query.trim().toUpperCase();
-
-    if (q.includes('FROM TASKS')) {
-      return [...this.tables.tasks] as unknown as T;
-    }
-    if (q.includes('FROM HABITS')) {
-      return [...this.tables.habits] as unknown as T;
-    }
-    if (q.includes('FROM POMODORO_SESSIONS')) {
-      return [...this.tables.pomodoro_sessions] as unknown as T;
-    }
-    if (q.includes('FROM ACCOUNTS')) {
-      return [...this.tables.accounts] as unknown as T;
-    }
-    if (q.includes('FROM TRANSACTIONS')) {
-      return [...this.tables.transactions] as unknown as T;
-    }
-    if (q.includes('FROM BUDGETS')) {
-      return [...this.tables.budgets] as unknown as T;
-    }
-
-    return [] as unknown as T;
+  try {
+    const db = await Database.load(DB_FILE);
+    await initializeNativeDatabase(db);
+    return db;
+  } catch (error) {
+    console.error('[Agente Pedro DB] Não foi possível abrir o banco local:', error);
+    throw new Error('Não foi possível abrir os dados do aplicativo. Tente novamente; seus registros não foram substituídos.', { cause: error });
   }
 }
 
-// Inicializa a conexão com o banco de dados e executa migrações idempotentes
-export async function getDatabase(): Promise<SqlDatabase> {
-  if (dbInstance) return dbInstance;
-
-  try {
-    // Verifica se estamos no ambiente nativo do Tauri
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      const db = await Database.load(DB_FILE);
-
-      // Aplica configurações do WAL mode obrigatórias
-      await db.execute('PRAGMA journal_mode = WAL;');
-      await db.execute('PRAGMA synchronous = NORMAL;');
-      await db.execute('PRAGMA foreign_keys = ON;');
-
-      // Criação de tabelas
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          version TEXT NOT NULL UNIQUE,
-          applied_at TEXT NOT NULL
-        );
-      `);
-
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS tasks (
-          id TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          priority TEXT NOT NULL CHECK(priority IN ('low', 'med', 'high')),
-          completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0, 1)),
-          due_date TEXT,
-          created_at TEXT NOT NULL,
-          updated_at TEXT
-        );
-      `);
-
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS habits (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          frequency TEXT NOT NULL DEFAULT 'daily',
-          streak_count INTEGER NOT NULL DEFAULT 0,
-          last_completed TEXT,
-          created_at TEXT NOT NULL,
-          updated_at TEXT
-        );
-      `);
-
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS pomodoro_sessions (
-          id TEXT PRIMARY KEY,
-          duration_minutes INTEGER NOT NULL,
-          completed_at TEXT NOT NULL
-        );
-      `);
-
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS accounts (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          type TEXT NOT NULL CHECK(type IN ('checking', 'wallet', 'savings')),
-          balance_cents INTEGER NOT NULL DEFAULT 0,
-          color TEXT,
-          created_at TEXT NOT NULL,
-          updated_at TEXT
-        );
-      `);
-
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS transactions (
-          id TEXT PRIMARY KEY,
-          account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
-          description TEXT NOT NULL,
-          amount_cents INTEGER NOT NULL,
-          type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-          category TEXT NOT NULL,
-          installment_group_id TEXT,
-          installment_number INTEGER,
-          installment_total INTEGER,
-          transaction_date TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT
-        );
-      `);
-
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS budgets (
-          id TEXT PRIMARY KEY,
-          category TEXT NOT NULL,
-          limit_cents INTEGER NOT NULL,
-          month_year TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT,
-          UNIQUE(category, month_year)
-        );
-      `);
-
-      // Cria conta padrão caso não exista nenhuma
-      const existingAccounts = await db.select<Account[]>('SELECT * FROM accounts LIMIT 1');
-      if (existingAccounts.length === 0) {
-        await db.execute(
-          'INSERT INTO accounts (id, name, type, balance_cents, color, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          ['acc-default', 'Carteira Principal', 'checking', 0, '#10b981', new Date().toISOString()]
-        );
-      }
-
-      dbInstance = db;
-      return db;
-    }
-  } catch (error) {
-    console.warn('[Agente Pedro DB] Modo nativo Tauri indisponível, usando fallback determinístico local:', error);
-  }
-
-  dbInstance = new BrowserSqlFallback();
-  return dbInstance;
+export async function initializeNativeDatabase(db: SqlDatabase): Promise<void> {
+  // journal_mode retorna linhas: SELECT consome o retorno corretamente no plugin SQL.
+  const mode = await db.select<{ journal_mode: string }[]>('PRAGMA journal_mode = WAL;');
+  if (mode[0]?.journal_mode?.toLowerCase() !== 'wal') throw new Error('O banco não confirmou o modo WAL.');
+  // O plugin usa um pool: SET e SELECT podem pegar conexões diferentes. SQLx
+  // abre cada conexão com synchronous=FULL; preservamos esse default seguro.
+  // NORMAL/EXTRA também são seguros para WAL; OFF não é aceito.
+  const synchronous = await db.select<{ synchronous: number }[]>('PRAGMA synchronous;');
+  if (![1, 2, 3].includes(synchronous[0]?.synchronous)) throw new Error('O banco não confirmou a configuração de gravação.');
+  await db.execute('PRAGMA foreign_keys = ON;');
+  const foreignKeys = await db.select<{ foreign_keys: number }[]>('PRAGMA foreign_keys;');
+  if (foreignKeys[0]?.foreign_keys !== 1) throw new Error('O banco não confirmou a integridade entre contas e movimentações.');
+  for (const statement of SCHEMA_STATEMENTS) await db.execute(statement);
 }
 
 // ── MÓDULO ROTINA & FOCO ──
@@ -379,6 +72,9 @@ export async function fetchTasks(): Promise<Task[]> {
 }
 
 export async function insertTask(title: string, priority: TaskPriority, dueDate: string | null = null): Promise<Task> {
+  title = requiredText(title, 'O título da tarefa');
+  if (!['low', 'med', 'high'].includes(priority)) throw new Error('A prioridade é inválida.');
+  if (dueDate !== null && !isLocalDate(dueDate)) throw new Error('O prazo da tarefa é inválido.');
   const db = await getDatabase();
   const id = `task-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
@@ -420,6 +116,7 @@ export async function fetchHabits(): Promise<Habit[]> {
 }
 
 export async function insertHabit(name: string, frequency = 'daily'): Promise<Habit> {
+  name = requiredText(name, 'O nome do hábito');
   const db = await getDatabase();
   const id = `habit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
@@ -446,13 +143,11 @@ export async function registerHabitCompletion(id: string): Promise<{ streak_coun
   const habit = habits[0];
   if (!habit) throw new Error('Hábito não encontrado');
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  let newStreak = habit.streak_count;
-
-  // Se já foi concluído hoje, mantém; senão incrementa
-  if (habit.last_completed !== todayStr) {
-    newStreak += 1;
-  }
+  const todayStr = localDate();
+  // Hoje é idempotente; ontem continua a sequência; um intervalo reinicia em um.
+  const newStreak = habit.last_completed === todayStr
+    ? habit.streak_count
+    : habit.last_completed === previousLocalDate() ? habit.streak_count + 1 : 1;
 
   const now = new Date().toISOString();
   await db.execute(
@@ -463,21 +158,23 @@ export async function registerHabitCompletion(id: string): Promise<{ streak_coun
   return { streak_count: newStreak, last_completed: todayStr };
 }
 
-export async function persistPomodoroSession(durationMinutes: number): Promise<PomodoroSession> {
+export async function fetchPomodoroSessions(): Promise<PomodoroSession[]> {
   const db = await getDatabase();
-  const id = `pomo-${Date.now()}`;
-  const now = new Date().toISOString();
+  return db.select<PomodoroSession[]>('SELECT * FROM pomodoro_sessions ORDER BY completed_at DESC');
+}
 
+export async function persistPomodoroSession(durationMinutes: number, sessionId?: string, completedAt?: string): Promise<PomodoroSession> {
+  assertInteger(durationMinutes, 'A duração da sessão', true);
+  const completion = completedAt === undefined ? new Date().toISOString() : completionTimestamp(completedAt);
+  const db = await getDatabase();
+  const id = sessionId || `pomo-${crypto.randomUUID()}`;
   await db.execute(
-    'INSERT INTO pomodoro_sessions (id, duration_minutes, completed_at) VALUES (?, ?, ?)',
-    [id, durationMinutes, now]
+    'INSERT OR IGNORE INTO pomodoro_sessions (id, duration_minutes, completed_at) VALUES (?, ?, ?)',
+    [id, durationMinutes, completion]
   );
-
-  return {
-    id,
-    duration_minutes: durationMinutes,
-    completed_at: now,
-  };
+  const rows = await db.select<PomodoroSession[]>('SELECT * FROM pomodoro_sessions WHERE id = ?', [id]);
+  if (!rows[0]) throw new Error('Não foi possível confirmar o registro da sessão de foco.');
+  return rows[0];
 }
 
 // ── MÓDULO FINANÇAS & CONTROLE ──
@@ -488,6 +185,9 @@ export async function fetchAccounts(): Promise<Account[]> {
 }
 
 export async function insertAccount(name: string, type: 'checking' | 'wallet' | 'savings', initialBalanceCents = 0, color = '#10b981'): Promise<Account> {
+  name = requiredText(name, 'O nome da conta');
+  assertInteger(initialBalanceCents, 'O saldo inicial');
+  if (!['checking', 'wallet', 'savings'].includes(type)) throw new Error('O tipo da conta é inválido.');
   const db = await getDatabase();
   const id = `acc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
@@ -533,10 +233,23 @@ export async function insertTransaction(params: {
   const db = await getDatabase();
   const id = `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
-  const txDate = params.transaction_date || now.split('T')[0];
+  const txDate = params.transaction_date || localDate();
+  if (!isLocalDate(txDate)) throw new Error('A data da movimentação é inválida.');
+  if (!['income', 'expense'].includes(params.type)) throw new Error('O tipo da movimentação é inválido.');
 
-  // Garante que amount_cents seja inteiro positivo
-  const amountCents = Math.abs(Math.round(params.amount_cents));
+  assertInteger(params.amount_cents, 'O valor da movimentação', true);
+  const amountCents = params.amount_cents;
+  const description = requiredText(params.description, 'A descrição');
+  const category = requiredText(params.category, 'A categoria');
+  requiredText(params.account_id, 'A conta');
+  const installmentNumber = params.installment_number ?? null;
+  const installmentTotal = params.installment_total ?? null;
+  if (installmentNumber !== null || installmentTotal !== null) {
+    if (installmentNumber === null || installmentTotal === null) throw new Error('Informe a parcela e o total de parcelas.');
+    assertInteger(installmentNumber, 'A parcela', true);
+    assertInteger(installmentTotal, 'O total de parcelas', true);
+    if (installmentNumber > installmentTotal) throw new Error('A parcela não pode exceder o total de parcelas.');
+  }
 
   await db.execute(
     `INSERT INTO transactions (
@@ -547,10 +260,10 @@ export async function insertTransaction(params: {
     [
       id,
       params.account_id,
-      params.description,
+      description,
       amountCents,
       params.type,
-      params.category,
+      category,
       params.installment_group_id ?? null,
       params.installment_number ?? null,
       params.installment_total ?? null,
@@ -559,20 +272,13 @@ export async function insertTransaction(params: {
     ]
   );
 
-  // Atualização transacional do saldo materializado da conta
-  const balanceAdjustment = params.type === 'income' ? amountCents : -amountCents;
-  await db.execute(
-    'UPDATE accounts SET balance_cents = balance_cents + ?, updated_at = ? WHERE id = ?',
-    [balanceAdjustment, now, params.account_id]
-  );
-
   return {
     id,
     account_id: params.account_id,
-    description: params.description,
+    description,
     amount_cents: amountCents,
     type: params.type,
-    category: params.category,
+    category,
     installment_group_id: params.installment_group_id ?? null,
     installment_number: params.installment_number ?? null,
     installment_total: params.installment_total ?? null,
@@ -584,20 +290,24 @@ export async function insertTransaction(params: {
 
 export async function fetchBudgets(monthYear?: string): Promise<Budget[]> {
   const db = await getDatabase();
-  const my = monthYear || new Date().toISOString().slice(0, 7);
+  const my = monthYear || localMonth();
+  if (!isLocalMonth(my)) throw new Error('O mês do orçamento é inválido.');
   return db.select<Budget[]>('SELECT * FROM budgets WHERE month_year = ? ORDER BY category ASC', [my]);
 }
 
 export async function insertOrUpdateBudget(category: string, limitCents: number, monthYear: string): Promise<void> {
+  category = requiredText(category, 'A categoria');
+  assertInteger(limitCents, 'O limite do orçamento', true);
+  if (!isLocalMonth(monthYear)) throw new Error('O mês do orçamento é inválido.');
   const db = await getDatabase();
-  const id = `bg-${Date.now()}`;
+  const id = `bg-${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
   await db.execute(
     `INSERT INTO budgets (id, category, limit_cents, month_year, created_at)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(category, month_year) DO UPDATE SET limit_cents = excluded.limit_cents, updated_at = ?`,
-    [id, category, Math.round(limitCents), monthYear, now, now]
+    [id, category, limitCents, monthYear, now, now]
   );
 }
 
@@ -606,7 +316,7 @@ export async function fetchConsolidatedBalance(): Promise<ConsolidatedBalance> {
   const accounts = await db.select<Account[]>('SELECT balance_cents FROM accounts');
   const totalBalance = accounts.reduce((acc, a) => acc + a.balance_cents, 0);
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = localMonth();
   const txs = await db.select<Transaction[]>(
     'SELECT amount_cents, type FROM transactions WHERE transaction_date LIKE ?',
     [`${currentMonth}%`]
@@ -625,4 +335,28 @@ export async function fetchConsolidatedBalance(): Promise<ConsolidatedBalance> {
     monthly_expense_cents: expense,
     accounts_count: accounts.length,
   };
+}
+
+
+function assertInteger(value: number, label: string, positive = false): void {
+  if (!Number.isSafeInteger(value) || (positive && value <= 0)) {
+    throw new Error(`${label} deve ser um inteiro${positive ? ' positivo' : ''} válido.`);
+  }
+}
+
+function requiredText(value: string, label: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} é obrigatório.`);
+  return value.trim();
+}
+
+
+/** Registros recuperados usam o prazo original, evitando atribuir o foco ao dia da reabertura. */
+function completionTimestamp(value: string): string {
+  const isoUtc = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?Z$/;
+  if (typeof value !== 'string' || !isoUtc.test(value) || !Number.isFinite(Date.parse(value))) {
+    throw new Error('O instante de conclusão da sessão é inválido.');
+  }
+  const normalized = new Date(value).toISOString();
+  if (normalized.slice(0, 10) !== value.slice(0, 10)) throw new Error('O instante de conclusão da sessão é inválido.');
+  return normalized;
 }

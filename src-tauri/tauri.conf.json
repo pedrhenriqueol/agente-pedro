@@ -14,27 +14,46 @@
       {
         "label": "island",
         "title": "Agente Pedro - Ilha",
-        "width": 380,
-        "height": 48,
+        "width": 404,
+        "height": 72,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
         "resizable": false,
         "shadow": false,
         "visible": true,
-        "url": "index.html?window=island"
+        "url": "index.html?window=island",
+        "focus": false,
+        "skipTaskbar": true
       },
       {
         "label": "main",
-        "title": "Agente Pedro - Console",
-        "width": 1100,
-        "height": 720,
+        "title": "Agente Pedro",
+        "width": 1280,
+        "height": 820,
         "decorations": false,
         "transparent": false,
         "resizable": true,
         "visible": false,
         "center": true,
-        "url": "index.html?window=main"
+        "url": "index.html?window=main",
+        "minWidth": 760,
+        "minHeight": 600
+      },
+      {
+        "label": "dock",
+        "title": "Agente Pedro - Atalhos",
+        "width": 450,
+        "height": 88,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": true,
+        "focus": false,
+        "skipTaskbar": true,
+        "url": "index.html?window=dock"
       }
     ],
     "security": {

@@ -81,3 +81,49 @@ CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
 CREATE INDEX IF NOT EXISTS idx_budgets_month_year ON budgets(month_year);
+
+
+-- Novas operações respeitam os limites sem reescrever registros anteriores.
+CREATE TRIGGER IF NOT EXISTS validate_transaction_insert
+BEFORE INSERT ON transactions
+BEGIN
+    SELECT CASE WHEN typeof(NEW.amount_cents) != 'integer' OR NEW.amount_cents <= 0 OR NEW.amount_cents > 9007199254740991
+        THEN RAISE(ABORT, 'amount_cents must be a positive integer') END;
+    SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM accounts WHERE id = NEW.account_id)
+        THEN RAISE(ABORT, 'account does not exist') END;
+    SELECT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM accounts WHERE id = NEW.account_id
+        AND abs(balance_cents + CASE WHEN NEW.type = 'income' THEN NEW.amount_cents ELSE -NEW.amount_cents END) <= 9007199254740991
+    ) THEN RAISE(ABORT, 'balance exceeds safe integer range') END;
+END;
+
+-- INSERT e saldo fazem parte da mesma instrução SQLite: nenhum segundo UPDATE no cliente.
+CREATE TRIGGER IF NOT EXISTS transactions_update_account_balance
+AFTER INSERT ON transactions
+BEGIN
+    UPDATE accounts
+    SET balance_cents = balance_cents + CASE WHEN NEW.type = 'income' THEN NEW.amount_cents ELSE -NEW.amount_cents END,
+        updated_at = NEW.created_at
+    WHERE id = NEW.account_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS validate_account_insert
+BEFORE INSERT ON accounts
+BEGIN
+    SELECT CASE WHEN typeof(NEW.balance_cents) != 'integer' OR abs(NEW.balance_cents) > 9007199254740991
+        THEN RAISE(ABORT, 'balance_cents must be a safe integer') END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS validate_budget_insert
+BEFORE INSERT ON budgets
+BEGIN
+    SELECT CASE WHEN typeof(NEW.limit_cents) != 'integer' OR NEW.limit_cents <= 0 OR NEW.limit_cents > 9007199254740991
+        THEN RAISE(ABORT, 'limit_cents must be a positive integer') END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS validate_budget_update
+BEFORE UPDATE OF limit_cents ON budgets
+BEGIN
+    SELECT CASE WHEN typeof(NEW.limit_cents) != 'integer' OR NEW.limit_cents <= 0 OR NEW.limit_cents > 9007199254740991
+        THEN RAISE(ABORT, 'limit_cents must be a positive integer') END;
+END;
