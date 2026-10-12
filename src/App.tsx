@@ -10,12 +10,19 @@ import { useFinanceStore } from './stores/useFinanceStore';
 import { initializeStateBridge } from './services/stateBridge';
 import { initializePreferencesSync, usePreferencesStore } from './stores/usePreferencesStore';
 import { requestPage, setDockVisible } from './lib/desktop';
+import { initializeMedia } from './stores/useMediaStore';
 
 export default function App() {
   const [label, setLabel] = useState<string | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [attempt, setAttempt] = useState(0);
   const preferences = usePreferencesStore();
+  useEffect(() => {
+    let cancelled = false;
+    let dispose: (() => void) | undefined;
+    void initializeMedia().then(cleanup => { if (cancelled) cleanup(); else dispose = cleanup; }).catch(() => {});
+    return () => { cancelled = true; dispose?.(); };
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const detect = async () => {
@@ -30,7 +37,7 @@ export default function App() {
     let cancelled = false; let cleanup: (() => void) | undefined;
     // Listen while data is opening, so a dock click can choose the first screen.
     void listen<string>('pedro:navigate', event => {
-      if (!['home', 'routine', 'finance', 'appearance'].includes(event.payload)) return;
+      if (!['home', 'routine', 'finance', 'music', 'appearance'].includes(event.payload)) return;
       const url = new URL(location.href); url.searchParams.set('page', event.payload);
       history.replaceState(null, '', url);
       window.dispatchEvent(new CustomEvent('pedro:navigate', { detail: event.payload }));

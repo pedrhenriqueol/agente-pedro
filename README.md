@@ -7,6 +7,7 @@ Aplicativo pessoal para Windows 10/11, com tarefas, hábitos, foco e finanças g
 - **Hoje:** prioridades, hábitos do dia, sessões concluídas e resumo financeiro.
 - **Rotinas e foco:** tarefas com prioridade, hábitos e Pomodoro de 25 minutos com pausa de 5 minutos. Painel e ilha compartilham seleção, tempo, pausa e conclusão da sessão.
 - **Finanças:** contas, entradas, saídas, histórico e limites mensais por categoria. Valores são armazenados em centavos; registrar uma movimentação também atualiza o saldo.
+- **Música:** faixa, artista, capa, pausa/reprodução, anterior/próxima e volume do Windows, no painel e na ilha. Acompanha o SoundCloud no navegador quando a reprodução é publicada pelo Windows; não requer chave de API nem serviço pago.
 - **Aparência:** temas claro, escuro ou do sistema, cor de destaque, movimento reduzido, conteúdo e opacidade da ilha, e visibilidade e opacidade do dock.
 - **Desktop:** ilha expansível, dock de atalhos e painel. `Alt + Espaço` mostra ou oculta o painel; `Ctrl + K` abre a busca de áreas.
 
@@ -43,6 +44,8 @@ npm run dev
 Abra `http://localhost:1420`. Para visualizar os widgets, use `http://localhost:1420/?window=island` ou `http://localhost:1420/?window=dock`.
 
 O preview usa armazenamento local do navegador. Não cria janelas transparentes sobre o desktop nem executa os controles nativos do Windows. Seus dados de preview são separados dos dados SQLite do aplicativo instalado.
+
+Os controles de música dependem do aplicativo desktop no Windows. O preview mostra esse limite sem inventar uma faixa. Veja [como testar a integração de música](docs/MUSICA.md).
 
 ### Aplicativo desktop
 

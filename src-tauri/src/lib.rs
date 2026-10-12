@@ -2,10 +2,12 @@ use std::str::FromStr;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
+mod media;
+
 // The native bounds include the 12 logical pixels used by each widget's shadow.
 const ISLAND_WIDTH: f64 = 404.0;
 const ISLAND_COMPACT_HEIGHT: f64 = 72.0;
-const ISLAND_EXPANDED_HEIGHT: f64 = 264.0;
+const ISLAND_EXPANDED_HEIGHT: f64 = 284.0;
 const DOCK_WIDTH: f64 = 450.0;
 const DOCK_HEIGHT: f64 = 88.0;
 
@@ -65,7 +67,7 @@ fn alternar_console(app: AppHandle) {
 
 #[tauri::command]
 fn abrir_painel(app: AppHandle, page: String) -> Result<(), String> {
-    if !matches!(page.as_str(), "home" | "routine" | "finance" | "appearance") {
+    if !matches!(page.as_str(), "home" | "routine" | "finance" | "music" | "appearance") {
         return Err("Seção desconhecida.".into());
     }
     let main = app.get_webview_window("main")
@@ -116,6 +118,7 @@ fn configurar_dock(app: AppHandle, visivel: bool) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(media::MediaState::default())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -137,9 +140,12 @@ pub fn run() {
             recolher_ilha,
             reposicionar_ilha,
             configurar_dock,
+            media::media_snapshot,
+            media::media_control,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            media::start(&handle);
             centralizar_ilha_topo(&handle);
             centralizar_dock_base(&handle);
             if let Ok(shortcut) = Shortcut::from_str("Alt+Space") {

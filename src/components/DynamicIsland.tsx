@@ -4,6 +4,8 @@ import { useFocusStore } from '../stores/useFocusStore';
 import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { requestPage, syncIslandSize } from '../lib/desktop';
+import { MusicPlayer } from './MusicPlayer';
+import { useMediaStore } from '../stores/useMediaStore';
 import '../styles/desktop.css';
 
 function formatTimer(seconds: number): string {
@@ -13,6 +15,7 @@ function formatTimer(seconds: number): string {
 
 export function DynamicIsland() {
   const [expanded, setExpanded] = useState(false);
+  const [section, setSection] = useState<'focus' | 'music'>('focus');
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
   const [error, setError] = useState('');
   const requestedExpansion = useRef(false);
@@ -22,6 +25,7 @@ export function DynamicIsland() {
   const expandedExpander = useRef<HTMLButtonElement>(null);
   const wasExpanded = useRef(false);
   const focus = useFocusStore();
+  const media = useMediaStore(state => state.snapshot);
   const { consolidated, accounts } = useFinanceStore();
   const { islandIdle, islandOpacity, reduceMotion } = usePreferencesStore();
   const active = focus.pomodoroState === 'focus' || focus.pomodoroState === 'break';
@@ -64,6 +68,7 @@ export function DynamicIsland() {
     if (resizeTimer.current) clearTimeout(resizeTimer.current);
     setError('');
     if (next) {
+      setSection(!active && !paused && !recordPending && media.session ? 'music' : 'focus');
       try {
         // Grow the native frame first so the entrance is never clipped by its old bounds.
         await syncIslandSize(true);
@@ -81,7 +86,7 @@ export function DynamicIsland() {
     }
   }
 
-  async function openPage(page: 'home' | 'routine' | 'finance') {
+  async function openPage(page: 'home' | 'routine' | 'finance' | 'music') {
     try { await requestPage(page); setError(''); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o painel.'); }
   }
@@ -93,7 +98,7 @@ export function DynamicIsland() {
     else focus.startPomodoro(focus.currentMode);
   }
 
-  const compactMode = active || paused || finished ? 'focus' : islandIdle;
+  const compactMode = active || paused || recordPending ? 'focus' : media.session ? 'music' : finished ? 'focus' : islandIdle;
   const styles = { '--widget-opacity': islandOpacity } as CSSProperties;
 
   return (
@@ -105,24 +110,24 @@ export function DynamicIsland() {
             <span>{currentTime}</span>
           </button>
           <button className="island-context" type="button" onClick={toggleExpansion} aria-expanded={expanded} aria-controls="island-details" aria-label="Expandir ilha do Pedro">
-            {compactMode === 'focus' ? <><span className={`island-status-dot ${active ? 'is-active' : ''}`} /><span>{saveFailed ? 'Registro pendente' : saving ? 'Registrando…' : finished ? 'Concluído' : formatTimer(focus.remainingSeconds)}</span><small>{paused ? 'Pausado' : modeName}</small></> : compactMode === 'balance' ? <><Wallet size={14} /><span>{accounts.length ? formatCentsToBRL(consolidated.total_balance_cents) : 'Suas finanças'}</span></> : compactMode === 'minimal' ? <span>Pedro</span> : <><span className="island-status-dot" /><span>Seu dia, com calma</span></>}
+            {compactMode === 'music' && media.session ? <><span className="island-music-cover" aria-hidden="true">{media.session.artwork ? <img src={media.session.artwork} alt="" /> : <span>♪</span>}</span><span title={media.session.title}>{media.session.title || 'Sua música'}</span><span className={`island-status-dot ${media.session.playbackStatus === 'playing' ? 'is-active' : ''}`} /></> : compactMode === 'focus' ? <><span className={`island-status-dot ${active ? 'is-active' : ''}`} /><span>{saveFailed ? 'Registro pendente' : saving ? 'Registrando…' : finished ? 'Concluído' : formatTimer(focus.remainingSeconds)}</span><small>{paused ? 'Pausado' : modeName}</small></> : compactMode === 'balance' ? <><Wallet size={14} /><span>{accounts.length ? formatCentsToBRL(consolidated.total_balance_cents) : 'Suas finanças'}</span></> : compactMode === 'minimal' ? <span>Pedro</span> : <><span className="island-status-dot" /><span>Seu dia, com calma</span></>}
           </button>
           <button ref={compactExpander} className="widget-icon-button island-expander" type="button" onClick={toggleExpansion} aria-expanded={expanded} aria-controls="island-details" aria-label="Expandir ilha" title="Expandir ilha"><ChevronDown size={16} /></button>
         </div>
 
         <div id="island-details" className="island-details" aria-hidden={!expanded} inert={!expanded || undefined}>
           <header className="island-expanded-header">
-            <div className="island-heading"><span className="pedro-widget-mark"><Sparkles size={16} aria-hidden="true" /></span><div><strong>Pedro</strong><span>{status}</span></div></div>
+            <div className="island-heading"><span className="pedro-widget-mark"><Sparkles size={16} aria-hidden="true" /></span><div><div className="island-section-picker" role="group" aria-label="Conteúdo da ilha"><button type="button" aria-pressed={section === 'focus'} onClick={() => setSection('focus')}>Foco</button><button type="button" aria-pressed={section === 'music'} onClick={() => setSection('music')}>Música</button></div><span>{section === 'focus' ? status : media.session?.playbackStatus === 'playing' ? 'Tocando agora' : 'Sua música, por perto'}</span></div></div>
             <div className="island-header-actions"><button className="widget-icon-button" type="button" onClick={() => openPage('home')} title="Abrir painel" aria-label="Abrir painel"><ArrowUpRight size={17} /></button><button ref={expandedExpander} className="widget-icon-button" type="button" onClick={toggleExpansion} title="Recolher ilha" aria-label="Recolher ilha"><ChevronUp size={17} /></button></div>
           </header>
 
-          <div className="island-focus-block">
+          {section === 'music' ? <MusicPlayer compact /> : <div className="island-focus-block">
             <div className="island-focus-top"><div className="island-mode-picker" aria-label="Tipo de sessão"><button type="button" className={focus.currentMode === 'focus' ? 'is-selected' : ''} onClick={() => focus.setPomodoroMode('focus')} disabled={active || paused || recordPending}>Foco</button><button type="button" className={focus.currentMode === 'break' ? 'is-selected' : ''} onClick={() => focus.setPomodoroMode('break')} disabled={active || paused || recordPending}><Coffee size={12} />Pausa</button></div><span className="island-clock">{currentTime}</span></div>
             <div className="island-timer-line"><div><span className="island-timer" role="timer" aria-label={`Tempo restante: ${formatTimer(focus.remainingSeconds)}`}>{formatTimer(focus.remainingSeconds)}</span><p className="island-task-name" title={selectedTask?.title}>{saveFailed ? 'Tente registrar novamente pelo botão ao lado.' : selectedTask?.title || (focus.currentMode === 'break' ? 'Respire. Você merece uma pausa.' : 'Escolha uma tarefa ou apenas comece.')}</p></div><div className="island-timer-actions"><button className="island-play-button" type="button" onClick={controlTimer} disabled={saving || (saveFailed && focus.isLoading)} aria-label={saveFailed ? 'Tentar registrar sessão novamente' : active ? 'Pausar sessão' : paused ? 'Continuar sessão' : 'Iniciar sessão'} title={saveFailed ? 'Tentar registrar novamente' : active ? 'Pausar' : paused ? 'Continuar' : 'Iniciar'}>{saveFailed ? <RefreshCw size={17} /> : active ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button><button className="widget-icon-button" type="button" onClick={focus.resetPomodoro} disabled={recordPending} aria-label="Reiniciar sessão" title="Reiniciar"><RotateCcw size={15} /></button></div></div>
             <div className="island-progress" role="progressbar" aria-label="Progresso da sessão" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.max(0, Math.min(1, progress)) * 100)}><span style={{ transform: `scaleX(${Math.max(0, Math.min(1, progress))})` }} /></div>
-          </div>
+          </div>}
 
-          <footer className="island-summary"><button type="button" onClick={() => openPage('routine')}><CircleCheck size={14} /><span>{pendingTasks ? `${pendingTasks} ${pendingTasks === 1 ? 'tarefa pendente' : 'tarefas pendentes'}` : 'Seu próximo passo'}</span><ArrowUpRight size={12} /></button><button type="button" onClick={() => openPage('finance')}><Wallet size={14} /><span>{accounts.length ? formatCentsToBRL(consolidated.total_balance_cents) : 'Finanças'}</span></button></footer>
+          <footer className="island-summary"><button type="button" onClick={() => openPage(section === 'music' ? 'music' : 'routine')}><CircleCheck size={14} /><span>{section === 'music' ? 'Abrir música no painel' : pendingTasks ? `${pendingTasks} ${pendingTasks === 1 ? 'tarefa pendente' : 'tarefas pendentes'}` : 'Seu próximo passo'}</span><ArrowUpRight size={12} /></button><button type="button" onClick={() => openPage('finance')}><Wallet size={14} /><span>{accounts.length ? formatCentsToBRL(consolidated.total_balance_cents) : 'Finanças'}</span></button></footer>
         </div>
       </section>
       {error && <p className="widget-error" role="alert">{error}</p>}

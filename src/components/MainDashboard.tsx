@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { emit } from '@tauri-apps/api/event';
-import { House, Focus, Wallet, SlidersHorizontal, ArrowRight, Command, HardDrive } from 'lucide-react';
+import { House, Focus, Wallet, Music2, SlidersHorizontal, ArrowRight, Command, HardDrive } from 'lucide-react';
 import { CustomTitleBar } from './CustomTitleBar';
 import { RoutineModule } from './RoutineModule';
 import { FinanceModule } from './FinanceModule';
 import { HomePage } from './HomePage';
 import { AppearancePage } from './AppearancePage';
+import { MusicPage } from './MusicPage';
 import { Dialog } from './ui/Dialog';
 import type { Page } from '../lib/desktop';
 
@@ -13,6 +14,7 @@ const PAGES = [
   { id: 'home', name: 'Hoje', detail: 'Prioridades e visão do dia', Icon: House },
   { id: 'routine', name: 'Rotinas e foco', detail: 'Tarefas, hábitos e Pomodoro', Icon: Focus },
   { id: 'finance', name: 'Finanças', detail: 'Contas, gastos e limites', Icon: Wallet },
+  { id: 'music', name: 'Música', detail: 'Sua reprodução e controles do Windows', Icon: Music2 },
   { id: 'appearance', name: 'Aparência', detail: 'Seu espaço do seu jeito', Icon: SlidersHorizontal },
 ] as const;
 function isPage(value: unknown): value is Page { return PAGES.some(p => p.id === value); }
@@ -55,6 +57,7 @@ export function MainDashboard() {
         {page === 'home' && <HomePage onNavigate={navigate} />}
         {page === 'routine' && <RoutineModule />}
         {page === 'finance' && <FinanceModule />}
+        {page === 'music' && <MusicPage />}
         {page === 'appearance' && <AppearancePage />}
       </div></main>
     </div>

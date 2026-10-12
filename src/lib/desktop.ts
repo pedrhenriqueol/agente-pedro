@@ -1,6 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 
-export type DesktopPage = 'home' | 'routine' | 'finance' | 'appearance';
+export type DesktopPage = 'home' | 'routine' | 'finance' | 'music' | 'appearance';
 export type Page = DesktopPage;
 
 export const DESKTOP_NAVIGATION_EVENT = 'pedro:navigate';
@@ -28,7 +28,7 @@ export async function requestPage(page: DesktopPage): Promise<void> {
 /** Native sizes include the transparent padding that contains the widget shadow. */
 export async function syncIslandSize(expanded: boolean): Promise<void> {
   if (!isTauri()) return;
-  if (expanded) await invoke('expandir_ilha', { altura: 264 });
+  if (expanded) await invoke('expandir_ilha', { altura: 284 });
   else await invoke('recolher_ilha');
 }
 

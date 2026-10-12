@@ -29,7 +29,7 @@
   box-shadow: 0 4px 11px rgba(0,0,0,.26);
   transition: height 280ms cubic-bezier(.2,.75,.2,1), border-radius 280ms cubic-bezier(.2,.75,.2,1);
 }
-.pedro-island.is-expanded { height: 240px; border-radius: 24px; }
+.pedro-island.is-expanded { height: 260px; border-radius: 24px; }
 .desktop-widget-shell button { border: 0; font: inherit; color: inherit; cursor: pointer; background: transparent; }
 .desktop-widget-shell button:disabled { cursor: default; opacity: .7; }
 .desktop-widget-shell button:focus-visible { outline: 2px solid var(--widget-accent); outline-offset: 2px; }
@@ -50,7 +50,13 @@
 .island-expanded-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 13px; }
 .island-heading { display: flex; gap: 9px; align-items: center; }
 .island-heading strong { display: block; font-size: 13px; font-weight: 650; }
+.island-section-picker { display: flex; gap: 2px; }
+.island-section-picker button { padding: 3px 8px; border-radius: 7px; font-size: 11px; color: var(--widget-muted); }
+.island-section-picker button[aria-pressed="true"] { color: var(--widget-accent); background: color-mix(in srgb, var(--widget-accent) 12%, transparent); }
+.island-music-cover { display: grid; place-items: center; width: 27px; height: 27px; flex: 0 0 27px; border-radius: 7px; background: var(--widget-raised); color: var(--widget-accent); overflow: hidden; }
+.island-music-cover img { width: 100%; height: 100%; object-fit: cover; }
 .island-heading div > span { display: block; margin-top: 2px; font-size: 10px; color: var(--widget-muted); }
+.island-details > .music-player { min-height: 150px; display: flex; flex-direction: column; justify-content: center; }
 .island-header-actions { display: flex; gap: 1px; }
 .island-focus-block { padding: 11px 13px 12px; border: 1px solid var(--widget-line); background: color-mix(in srgb,var(--widget-raised) 40%,transparent); border-radius: 15px; }
 .island-focus-top { display: flex; justify-content: space-between; align-items: center; }
