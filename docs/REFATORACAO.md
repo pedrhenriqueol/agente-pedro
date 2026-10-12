@@ -2,7 +2,7 @@
 
 ## Base e escopo
 
-A base foi o snapshot upstream `940610895d1ab7d9a1a15fd494170a0a4163c942` de `pedrhenriqueol/agente-pedro`. O checkout de trabalho recebeu uma baseline Git local sintética para revisão do diff; essa baseline não foi enviada ao repositório remoto.
+A base foi o commit upstream `940610895d1ab7d9a1a15fd494170a0a4163c942` de `pedrhenriqueol/agente-pedro`. A integração usa o clone e o histórico originais do GitHub. O patch recebido foi conferido pelo SHA-256 `3e045fd9d2a1920e694baabaf21a81a50ed026467c463d4297428e6e6b0f689c` e aplicado sem conflitos; a baseline sintética usada na preparação anterior não foi importada.
 
 O Niko foi usado como referência visual e de organização de conteúdo. As alterações desta entrega pertencem somente ao Agente Pedro.
 
@@ -13,6 +13,7 @@ O Niko foi usado como referência visual e de organização de conteúdo. As alt
 - Cards, formulários, estados vazios e mensagens reorganizados para explicar o próximo passo; temas e transições com movimento reduzido.
 - Ilha e dock com atalhos úteis, preferências compartilhadas e dimensionamento nativo compatível com as animações.
 - Pomodoro sincronizado entre janelas por comandos e prazo de conclusão, sem transmitir cada atualização do relógio. Sessões de foco usam ID compartilhado para evitar registros duplicados.
+- Ticks consultam o estado mais recente antes de concluir uma sessão, respeitando pausa, reinício e troca de sessão feitos em outra janela mesmo quando o evento chega atrasado.
 - Finanças com contas, movimentações e limites reais. A gravação de uma movimentação e a atualização do saldo são atômicas; falhas preservam os dados anteriores.
 - Scripts de preparação portáteis, com `npm ci`, verificações de ferramentas e nenhuma dependência de caminhos pessoais do Antigravity.
 
@@ -24,7 +25,7 @@ Dados de preview no navegador e dados SQLite do desktop permanecem separados. Pr
 
 ## Validação e limites
 
-- **29 testes automatizados** de banco, persistência e stores/sincronização, incluindo conexões SQLite alternadas e recuperação de uma sessão cujo salvamento falhou.
+- **30 testes automatizados** de banco, persistência e stores/sincronização, incluindo conexões SQLite alternadas, recuperação de uma sessão cujo salvamento falhou e ticks atrasados após comandos de outra janela.
 - Build da interface com TypeScript e Vite.
 - Verificações no navegador dos fluxos, widgets, temas, responsividade e preservação dos formulários após falha de gravação.
 - `cargo check` para o alvo Windows GNU passou. Isso verifica compilação cruzada, não execução nativa.

@@ -285,6 +285,34 @@ test('Um comando consulta o snapshot recente antes de receber o evento atrasado'
   } finally { closeMain(); closeIsland(); env.close(); }
 });
 
+test('Um tick atrasado respeita a pausa, o reset e a nova sessão da outra janela', async () => {
+  for (const command of ['pausePomodoro', 'resetPomodoro', 'startPomodoro']) {
+    const env = environment(); const main = env.page(); const island = env.page();
+    const closeMain = await main.initializeStateBridge(); const closeIsland = await island.initializeStateBridge();
+    try {
+      main.useFocusStore.getState().startPomodoro('focus'); await settle();
+      env.clock.now += 1_499_000;
+      if (command === 'startPomodoro') island.useFocusStore.getState().startPomodoro('break');
+      else island.useFocusStore.getState()[command]();
+      const fresh = island.useFocusStore.getState();
+      const expected = { state: fresh.pomodoroState, sessionId: fresh.sessionId, targetTimestamp: fresh.targetTimestamp };
+      // The main window still has the old deadline when its next interval callback runs.
+      env.clock.now += 2_000;
+      main.useFocusStore.getState().tickTimer(); await settle();
+      for (const page of [main, island]) {
+        const current = page.useFocusStore.getState();
+        assert.equal(current.pomodoroState, expected.state, command);
+        assert.equal(current.sessionId, expected.sessionId, command);
+        assert.equal(current.targetTimestamp, expected.targetTimestamp, command);
+        assert.equal(current.sessions.length, 0, 'A sessão antiga não pode ser registrada após outro comando');
+      }
+      if (command === 'pausePomodoro') assert.equal(main.useFocusStore.getState().remainingSeconds, 1);
+      if (command === 'resetPomodoro') assert.equal(main.useFocusStore.getState().remainingSeconds, 1500);
+      if (command === 'startPomodoro') assert.equal(main.useFocusStore.getState().remainingSeconds, 298);
+    } finally { closeMain(); closeIsland(); env.close(); }
+  }
+});
+
 test('Uma sessão vencida durante o app fechado guarda o dia do deadline, sem duplicar na reabertura', async () => {
   const env = environment();
   env.clock.now = new Date(2026, 9, 12, 23).getTime();

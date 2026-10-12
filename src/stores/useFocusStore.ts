@@ -89,9 +89,9 @@ function publishCommand(): void {
   publishTimerSnapshot(snapshot());
 }
 
-function syncLatestTimer(): void {
+function syncLatestTimer(tickImmediately = true): void {
   const stored = readTimerSnapshot();
-  if (stored && compareTimerSnapshots(stored, snapshot()) > 0) applyTimerSnapshot(stored);
+  if (stored && compareTimerSnapshots(stored, snapshot()) > 0) applyTimerSnapshot(stored, tickImmediately);
 }
 
 async function loadData(): Promise<void> {
@@ -229,6 +229,9 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
   },
 
   tickTimer: () => {
+    // Another window can pause, reset, or replace this session before its event arrives.
+    // Hydrate without recursively ticking; this invocation handles the fresh deadline.
+    syncLatestTimer(false);
     const { targetTimestamp, currentMode, sessionId, totalDurationSeconds, remainingSeconds } = get();
     if (targetTimestamp === null) return;
     const remaining = Math.max(0, Math.min(totalDurationSeconds, Math.ceil((targetTimestamp - Date.now()) / 1000)));
@@ -288,7 +291,7 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
   },
 }));
 
-function applyTimerSnapshot(value: unknown): void {
+function applyTimerSnapshot(value: unknown, tickImmediately = true): void {
   if (!isTimerSnapshot(value)) return;
   const current = snapshot();
   if (compareTimerSnapshots(value, current) <= 0) {
@@ -307,7 +310,7 @@ function applyTimerSnapshot(value: unknown): void {
   const active = value.pomodoroState === 'focus' || value.pomodoroState === 'break';
   if (active) {
     useFocusStore.setState({ timerIntervalId: startInterval() });
-    useFocusStore.getState().tickTimer();
+    if (tickImmediately) useFocusStore.getState().tickTimer();
   } else if (value.pomodoroState === 'completed' && value.currentMode === 'focus' && value.sessionId) {
     void saveSession(value.sessionId, value.totalDurationSeconds, completedAt);
   }
