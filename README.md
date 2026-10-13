@@ -63,3 +63,5 @@ O desktop mantém o banco `agente_pedro.db` no diretório local do aplicativo. A
 `npm test` cobre banco, persistência e sincronização entre janelas. `npm run build` verifica TypeScript e gera a interface. A compilação cruzada para Windows foi verificada; a execução nativa, o empacotamento e a instalação ainda precisam ser validados em Windows.
 
 Veja o escopo e os limites desta entrega em [docs/REFATORACAO.md](docs/REFATORACAO.md).
+
+A [análise visual comparativa](docs/ANALISE_VISUAL.md) registra a proposta de evolução da navegação, transições e integração com o Windows. As melhorias propostas nesse documento ainda não foram aplicadas.
