@@ -50,7 +50,21 @@ function snapshot({ revision = 1, sequence = revision, session = {}, ...override
 
 function environment({ native = true, initial = snapshot() } = {}) {
   const calls = []; const trace = []; const listeners = new Map();
-  const removed = []; const clock = { now: 10_000 };
+  const removed = []; const timers = new Map();
+  let timerSequence = 0;
+  const clock = {
+    now: 10_000,
+    advance(milliseconds) {
+      const target = this.now + milliseconds;
+      while (true) {
+        const next = [...timers].filter(([, timer]) => timer.at <= target)
+          .sort((left, right) => left[1].at - right[1].at)[0];
+        if (!next) break;
+        timers.delete(next[0]); this.now = next[1].at; next[1].callback();
+      }
+      this.now = target;
+    },
+  };
   let sequence = 0; let rejectedEvent = null;
   let invoke = async (command) => {
     if (command === 'media_snapshot' || command === 'media_control') return initial;
@@ -78,10 +92,16 @@ function environment({ native = true, initial = snapshot() } = {}) {
   };
   const module = { exports: {} };
   vm.runInNewContext(compiled, {
-    module, exports: module.exports, mediaIpc, Date: ClockDate, Error, console, setTimeout, clearTimeout, queueMicrotask,
+    module, exports: module.exports, mediaIpc, Date: ClockDate, Error, console,
+    setTimeout(callback, delay) {
+      const id = ++timerSequence;
+      timers.set(id, { callback, at: clock.now + delay }); return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    queueMicrotask,
   });
   return {
-    ...module.exports, calls, trace, listeners, removed, clock,
+    ...module.exports, calls, trace, listeners, removed, clock, timers,
     handleInvoke(handler) { invoke = handler; },
     rejectListen(event) { rejectedEvent = event; },
     emit(event, payload) {
@@ -329,4 +349,175 @@ test('Falha da leitura inicial mantém listeners de montagens concorrentes e atu
   } finally { closeFirst(); closeSecond(); }
   assert.equal(env.listeners.size, 0);
   assert.equal(env.removed.length, 2);
+});
+
+test('Ausência transitória conserva só a apresentação até a próxima faixa e nunca envia transporte antigo', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    const original = plain(env.useMediaStore.getState().displaySession);
+    env.emit('pedro:media', snapshot({ revision: 2, session: null }));
+    const updating = env.useMediaStore.getState();
+    assert.equal(updating.snapshot.session, null, 'O estado Windows não pode inventar uma sessão');
+    assert.equal(updating.presentationPhase, 'updating');
+    assert.deepEqual(plain(updating.displaySession), original);
+    await assert.rejects(updating.controlMedia('pause'), /Nenhuma reprodução/);
+    assert.equal(env.calls.length, 1, 'A faixa preservada para desenho não deve receber ações');
+    env.clock.advance(900);
+    env.emit('pedro:media-position', { revision: 2, sequence: 3, sessionId: 'soundcloud-tab', positionSeconds: 30, durationSeconds: 180 });
+    assert.equal(env.useMediaStore.getState().displaySession.positionSeconds, original.positionSeconds,
+      'Ticks sem identidade autoritativa não avançam o progresso apresentado');
+    env.emit('pedro:media', snapshot({ revision: 3, session: { id: 'new-tab', title: 'Nova faixa', positionSeconds: 0 } }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Nova faixa');
+    assert.equal(env.timers.size, 0, 'A chegada da faixa cancela a expiração anterior');
+    env.clock.advance(2_000);
+    assert.equal(env.useMediaStore.getState().displaySession.id, 'new-tab');
+  } finally { close(); }
+});
+
+test('Fechamento confirmado esvazia a apresentação no prazo original mesmo com amostras nulas repetidas', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.emit('pedro:media', snapshot({ revision: 2, session: null }));
+    env.clock.advance(900);
+    env.emit('pedro:media', snapshot({ revision: 2, sequence: 3, session: null }));
+    env.clock.advance(env.MEDIA_PRESENTATION_GRACE_MS - 901);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'updating');
+    assert.notEqual(env.useMediaStore.getState().displaySession, null);
+    env.clock.advance(1);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'empty');
+    assert.equal(env.useMediaStore.getState().snapshot.session, null);
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+    env.emit('pedro:media', snapshot({ revision: 3, session: null }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'empty');
+    assert.equal(env.timers.size, 0, 'Uma ausência confirmada não inicia outro intervalo');
+  } finally { close(); }
+});
+
+test('Erro de leitura interrompe a atualização transitória imediatamente e a tentativa recupera a apresentação', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.emit('pedro:media', snapshot({ revision: 2, session: null }));
+    env.handleInvoke(async () => { throw new Error('Falha ao consultar o Windows'); });
+    await assert.rejects(env.useMediaStore.getState().refreshMedia(), /consultar o Windows/);
+    const failed = env.useMediaStore.getState();
+    assert.equal(failed.presentationPhase, 'unavailable');
+    assert.equal(failed.displaySession, null);
+    assert.match(failed.error, /consultar o Windows/);
+    assert.equal(env.timers.size, 0, 'O prazo de vazio não pode apagar um erro real');
+    env.clock.advance(5_000);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+    env.handleInvoke(async () => snapshot({ revision: 3, session: { title: 'Faixa recuperada' } }));
+    await env.useMediaStore.getState().refreshMedia();
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Faixa recuperada');
+    assert.equal(env.useMediaStore.getState().error, null);
+  } finally { close(); }
+});
+
+test('Snapshot com erro nativo não é suavizado como intervalo entre músicas', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.emit('pedro:media', snapshot({ revision: 2, session: null, error: 'Serviço indisponível' }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+    assert.equal(env.useMediaStore.getState().snapshot.error, 'Serviço indisponível');
+    assert.equal(env.timers.size, 0);
+  } finally { close(); }
+});
+
+test('Erro de leitura com sessão anterior mostra indisponibilidade e não libera transporte ao chegar leitura velha', async () => {
+  const env = environment({ initial: snapshot({ revision: 4 }) });
+  const close = await env.initializeMedia(); const oldRead = deferred();
+  try {
+    env.handleInvoke(() => oldRead.promise);
+    const late = env.useMediaStore.getState().refreshMedia();
+    await settle();
+    env.handleInvoke(async () => { throw new Error('Windows indisponível'); });
+    await assert.rejects(env.useMediaStore.getState().refreshMedia(), /Windows indisponível/);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+    assert.equal(env.useMediaStore.getState().displaySession.id, 'soundcloud-tab', 'Os metadados conhecidos permanecem apenas como contexto do erro');
+    oldRead.resolve(snapshot({ revision: 3 }));
+    await late;
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+    assert.match(env.useMediaStore.getState().error, /Windows indisponível/);
+    const callsBefore = env.calls.length;
+    await assert.rejects(env.useMediaStore.getState().controlMedia('pause'), /Atualize a reprodução/);
+    assert.equal(env.calls.length, callsBefore);
+    env.emit('pedro:media', snapshot({ revision: 5 }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().error, null, 'Um evento autoritativo novo recupera a leitura');
+  } finally { close(); }
+});
+
+test('Troca recebida antes da execução da fila cancela transporte sem enviar o ID antigo', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    const pause = env.useMediaStore.getState().controlMedia('pause');
+    env.emit('pedro:media', snapshot({ revision: 2, session: { id: 'new-player', title: 'Outro player' } }));
+    await assert.rejects(pause, /reprodução mudou/);
+    assert.equal(env.calls.length, 1, 'Nenhum controle com identidade antiga pode cruzar o IPC');
+    assert.equal(env.useMediaStore.getState().pending, false);
+    env.handleInvoke(async (command, args) => {
+      assert.equal(command, 'media_control');
+      assert.equal(args.sessionId, 'new-player');
+      return snapshot({ revision: 3, session: { id: 'new-player', playbackStatus: 'paused' } });
+    });
+    await env.useMediaStore.getState().controlMedia('pause');
+    assert.equal(env.useMediaStore.getState().snapshot.session.playbackStatus, 'paused');
+  } finally { close(); }
+});
+
+test('Comando em voo e volumes pendentes recebem eventos novos sem restaurar resposta ou metadados antigos', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  const pauseResponse = deferred(); const volumeResponse = deferred();
+  env.handleInvoke((command, args) => {
+    assert.equal(command, 'media_control');
+    if (args.action === 'pause') return pauseResponse.promise;
+    assert.equal(args.action, 'volume');
+    assert.equal(args.sessionId, null, 'Volume usa identidade global, independente do player anterior');
+    return volumeResponse.promise;
+  });
+  try {
+    const pause = env.useMediaStore.getState().controlMedia('pause');
+    const volume = env.useMediaStore.getState().controlMedia('volume', 65);
+    await settle();
+    env.emit('pedro:media', snapshot({ revision: 4, session: null }));
+    env.clock.advance(900);
+    env.emit('pedro:media', snapshot({ revision: 5, sequence: 8, session: { id: 'new-player', title: 'Faixa nova', positionSeconds: 1 } }));
+    pauseResponse.resolve(snapshot({ revision: 2, session: { playbackStatus: 'paused' } }));
+    await pause; await settle();
+    assert.equal(env.useMediaStore.getState().pending, true);
+    assert.equal(env.useMediaStore.getState().snapshot.revision, 5);
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Faixa nova');
+    volumeResponse.resolve(snapshot({ revision: 3, volume: 65 }));
+    await volume;
+    assert.equal(env.useMediaStore.getState().snapshot.revision, 5);
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Faixa nova');
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().pending, false);
+    env.clock.advance(2_000);
+    assert.equal(env.useMediaStore.getState().displaySession.id, 'new-player');
+  } finally { close(); }
+});
+
+test('Última desmontagem limpa prazo transitório e remonte StrictMode não conserva uma apresentação fantasma', async () => {
+  const env = environment();
+  const [closeFirst, closeSecond] = await Promise.all([env.initializeMedia(), env.initializeMedia()]);
+  env.emit('pedro:media', snapshot({ revision: 2, session: null }));
+  assert.equal(env.timers.size, 1);
+  closeFirst(); closeFirst();
+  assert.equal(env.timers.size, 1, 'Outra montagem ainda possui a apresentação');
+  closeSecond();
+  assert.equal(env.timers.size, 0);
+  assert.equal(env.listeners.size, 0);
+  assert.equal(env.useMediaStore.getState().displaySession, null);
+  assert.equal(env.useMediaStore.getState().presentationPhase, 'empty');
+  env.handleInvoke(async () => snapshot({ revision: 3, session: null }));
+  const closeRestart = await env.initializeMedia();
+  try {
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'empty');
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+    assert.equal(env.timers.size, 0);
+  } finally { closeRestart(); }
 });
