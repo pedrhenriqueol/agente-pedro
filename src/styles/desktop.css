@@ -18,6 +18,7 @@
 }
 .desktop-widget-shell *, .desktop-widget-shell *::before, .desktop-widget-shell *::after { box-sizing: border-box; }
 .island-shell { width: 404px; }
+.island-shell[data-island-visible="false"] { visibility: hidden; pointer-events: none; }
 .pedro-island {
   position: relative;
   width: 380px;

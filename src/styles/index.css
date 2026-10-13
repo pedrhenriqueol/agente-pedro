@@ -142,6 +142,11 @@ kbd { font: inherit; font-size: 10px; border: 1px solid var(--line); border-radi
 .idle-choice > svg { flex-shrink: 0; color: var(--accent); }
 .idle-choice strong { display: block; font-size: 13px; font-weight: 550; color: var(--text); }
 .idle-choice small { display: block; margin-top: 4px; font-size: 11px; line-height: 1.5; }
+.island-delay-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; }
+.island-delay-setting > label { font-size: 12px; color: var(--muted); }
+.island-delay-setting > select { width: auto; min-width: 132px; }
+.island-delay-setting > select:disabled { opacity: .55; cursor: default; }
+.settings-help { margin-top: 13px; color: var(--muted); font-size: 12px; line-height: 1.75; }
 .slider-label { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 25px; font-size: 12px; color: var(--muted); }
 .slider-label output { color: var(--text); font-variant-numeric: tabular-nums; }
 .range-input { width: 100%; margin-top: 10px; cursor: pointer; }

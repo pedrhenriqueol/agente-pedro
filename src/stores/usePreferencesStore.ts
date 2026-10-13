@@ -8,13 +8,15 @@ export interface Preferences {
   reduceMotion: boolean;
   dockEnabled: boolean;
   islandIdle: 'clock' | 'focus' | 'balance' | 'minimal';
+  islandVisibility: 'fixed' | 'hybrid';
+  islandHideDelay: 3 | 5 | 10;
   islandOpacity: number;
   dockOpacity: number;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: 'dark', accent: 'mint', reduceMotion: false, dockEnabled: true,
-  islandIdle: 'clock', islandOpacity: .96, dockOpacity: .94,
+  islandIdle: 'clock', islandVisibility: 'fixed', islandHideDelay: 3, islandOpacity: .96, dockOpacity: .94,
 };
 const STORAGE_KEY = 'pedro_preferences_v1';
 const source = crypto.randomUUID();
@@ -25,6 +27,8 @@ function normalize(value: Partial<Preferences>): Preferences {
   if (!['dark', 'light', 'system'].includes(p.theme)) p.theme = 'dark';
   if (!['mint', 'violet', 'blue'].includes(p.accent)) p.accent = 'mint';
   if (!['clock', 'focus', 'balance', 'minimal'].includes(p.islandIdle)) p.islandIdle = 'clock';
+  if (!['fixed', 'hybrid'].includes(p.islandVisibility)) p.islandVisibility = 'fixed';
+  if (![3, 5, 10].includes(p.islandHideDelay)) p.islandHideDelay = 3;
   p.reduceMotion = Boolean(p.reduceMotion);
   p.dockEnabled = p.dockEnabled !== false;
   p.islandOpacity = Number.isFinite(p.islandOpacity) ? Math.max(.55, Math.min(1, p.islandOpacity)) : .96;
@@ -35,7 +39,8 @@ function normalize(value: Partial<Preferences>): Preferences {
 function snapshot(): Preferences {
   const s = usePreferencesStore.getState();
   return normalize({ theme: s.theme, accent: s.accent, reduceMotion: s.reduceMotion,
-    dockEnabled: s.dockEnabled, islandIdle: s.islandIdle, islandOpacity: s.islandOpacity, dockOpacity: s.dockOpacity });
+    dockEnabled: s.dockEnabled, islandIdle: s.islandIdle, islandVisibility: s.islandVisibility,
+    islandHideDelay: s.islandHideDelay, islandOpacity: s.islandOpacity, dockOpacity: s.dockOpacity });
 }
 
 async function announce() {

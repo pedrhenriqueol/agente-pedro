@@ -3,6 +3,7 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod media;
+mod island_visibility;
 
 // The native bounds include the 12 logical pixels used by each widget's shadow.
 const ISLAND_WIDTH: f64 = 404.0;
@@ -87,6 +88,10 @@ fn expandir_ilha(app: AppHandle, altura: f64) -> Result<(), String> {
     }
     let island = app.get_webview_window("island")
         .ok_or_else(|| "A ilha não está disponível.".to_string())?;
+    if !island_visibility::is_visible(app.state::<island_visibility::IslandVisibilityState>().inner())
+        || !island.is_visible().map_err(|error| error.to_string())? {
+        return Err("A ilha está escondida. Revele-a pelo topo para expandir.".into());
+    }
     let height = altura.clamp(ISLAND_COMPACT_HEIGHT, ISLAND_EXPANDED_HEIGHT);
     island.set_size(LogicalSize::new(ISLAND_WIDTH, height)).map_err(|error| error.to_string())
 }
@@ -119,6 +124,7 @@ fn configurar_dock(app: AppHandle, visivel: bool) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(media::MediaState::default())
+        .manage(island_visibility::IslandVisibilityState::default())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -142,11 +148,15 @@ pub fn run() {
             configurar_dock,
             media::media_snapshot,
             media::media_control,
+            island_visibility::configure_island_visibility,
+            island_visibility::island_activity,
+            island_visibility::island_visibility_snapshot,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
             media::start(&handle);
             centralizar_ilha_topo(&handle);
+            island_visibility::start(&handle);
             centralizar_dock_base(&handle);
             if let Ok(shortcut) = Shortcut::from_str("Alt+Space") {
                 let _ = app.global_shortcut().register(shortcut);

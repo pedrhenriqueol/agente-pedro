@@ -6,6 +6,7 @@ import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { requestPage, syncIslandSize } from '../lib/desktop';
 import { MusicPlayer } from './MusicPlayer';
 import { useMediaStore } from '../stores/useMediaStore';
+import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
 import '../styles/desktop.css';
 
 function formatTimer(seconds: number): string {
@@ -26,6 +27,9 @@ export function DynamicIsland() {
   const wasExpanded = useRef(false);
   const focus = useFocusStore();
   const media = useMediaStore(state => state.snapshot);
+  const visibility = useIslandVisibilityStore(state => state.snapshot);
+  const visibilityError = useIslandVisibilityStore(state => state.error);
+  const notifyActivity = useIslandVisibilityStore(state => state.notifyActivity);
   const { consolidated, accounts } = useFinanceStore();
   const { islandIdle, islandOpacity, reduceMotion } = usePreferencesStore();
   const active = focus.pomodoroState === 'focus' || focus.pomodoroState === 'break';
@@ -41,6 +45,15 @@ export function DynamicIsland() {
   const status = saveFailed ? 'Sessão concluída · registro pendente' : saving ? 'Registrando sua sessão…' : finished ? 'Sessão concluída' : paused ? 'Sessão pausada' : active ? `${modeName} em andamento` : 'Um passo de cada vez';
 
   useEffect(() => {
+    if (visibility.visible) return;
+    requestedExpansion.current = false;
+    resizeSequence.current += 1;
+    if (resizeTimer.current) clearTimeout(resizeTimer.current);
+    resizeTimer.current = null;
+    setExpanded(false);
+  }, [visibility.visible]);
+
+  useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })), 10000);
     return () => {
       clearInterval(interval);
@@ -50,10 +63,10 @@ export function DynamicIsland() {
   }, []);
 
   useEffect(() => {
-    if (expanded) expandedExpander.current?.focus({ preventScroll: true });
-    else if (wasExpanded.current) compactExpander.current?.focus({ preventScroll: true });
+    if (expanded && visibility.visible) expandedExpander.current?.focus({ preventScroll: true });
+    else if (wasExpanded.current && visibility.visible) compactExpander.current?.focus({ preventScroll: true });
     wasExpanded.current = expanded;
-  }, [expanded]);
+  }, [expanded, visibility.visible]);
 
   useEffect(() => {
     if (!error) return;
@@ -62,6 +75,8 @@ export function DynamicIsland() {
   }, [error]);
 
   async function toggleExpansion() {
+    if (!visibility.visible) return;
+    notifyActivity();
     const next = !requestedExpansion.current;
     requestedExpansion.current = next;
     const sequence = ++resizeSequence.current;
@@ -102,7 +117,9 @@ export function DynamicIsland() {
   const styles = { '--widget-opacity': islandOpacity } as CSSProperties;
 
   return (
-    <div className="desktop-widget-shell island-shell" style={styles} data-reduce-motion={reduceMotion}>
+    <div className="desktop-widget-shell island-shell" style={styles} data-reduce-motion={reduceMotion}
+      data-island-visible={visibility.visible} aria-hidden={!visibility.visible} inert={!visibility.visible || undefined}
+      onFocusCapture={notifyActivity} onKeyDownCapture={notifyActivity} onPointerDownCapture={notifyActivity} onPointerMoveCapture={notifyActivity}>
       <section className={`pedro-island ${expanded ? 'is-expanded' : ''}`} aria-label="Ilha do Pedro" onKeyDown={(event) => { if (expanded && event.key === 'Escape') { event.preventDefault(); void toggleExpansion(); } }}>
         <div className="island-compact" aria-hidden={expanded} inert={expanded || undefined}>
           <button className="island-identity" type="button" onClick={() => openPage('home')} aria-label="Abrir Hoje no painel do Pedro" title="Abrir o painel">
@@ -130,7 +147,7 @@ export function DynamicIsland() {
           <footer className="island-summary"><button type="button" onClick={() => openPage(section === 'music' ? 'music' : 'routine')}><CircleCheck size={14} /><span>{section === 'music' ? 'Abrir música no painel' : pendingTasks ? `${pendingTasks} ${pendingTasks === 1 ? 'tarefa pendente' : 'tarefas pendentes'}` : 'Seu próximo passo'}</span><ArrowUpRight size={12} /></button><button type="button" onClick={() => openPage('finance')}><Wallet size={14} /><span>{accounts.length ? formatCentsToBRL(consolidated.total_balance_cents) : 'Finanças'}</span></button></footer>
         </div>
       </section>
-      {error && <p className="widget-error" role="alert">{error}</p>}
+      {(error || visibilityError || visibility.error) && <p className="widget-error" role="alert">{error || visibilityError || visibility.error}</p>}
     </div>
   );
 }

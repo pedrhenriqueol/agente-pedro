@@ -1,4 +1,5 @@
-import { Moon, Sun, Monitor, Palette, RotateCcw, Clock3, Focus, Wallet, Minus, Eye, Sparkles } from 'lucide-react';
+import { Moon, Sun, Monitor, Palette, RotateCcw, Clock3, Focus, Wallet, Minus, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { isTauri } from '@tauri-apps/api/core';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { useFocusStore } from '../stores/useFocusStore';
 import { formatCentsToBRL, useFinanceStore } from '../stores/useFinanceStore';
@@ -7,6 +8,9 @@ export function AppearancePage() {
   const p = usePreferencesStore();
   const focus = useFocusStore();
   const finance = useFinanceStore();
+  const hybrid = p.islandVisibility === 'hybrid';
+  const visibilityOptions = [{ value: 'fixed', label: 'Fixa', detail: 'Sempre visível sobre o desktop.', Icon: Eye },
+    { value: 'hybrid', label: 'Híbrida', detail: 'Esconde por inatividade ou quando outro app ocupa a tela.', Icon: EyeOff }] as const;
   const themeOptions = [{ value: 'dark', label: 'Escuro', Icon: Moon }, { value: 'light', label: 'Claro', Icon: Sun }, { value: 'system', label: 'Sistema', Icon: Monitor }] as const;
   const idleOptions = [{ value: 'clock', label: 'Relógio', detail: 'Hora local, sempre à mão.', Icon: Clock3 },
     { value: 'focus', label: 'Foco', detail: 'Sua sessão e o tempo restante.', Icon: Focus },
@@ -26,7 +30,16 @@ export function AppearancePage() {
               onChange={() => p.updatePreferences({ accent: o.value })} /><span style={{ background: o.color }} /><span>{o.label}</span></label>)}</div></fieldset>
         </section>
         <section className="panel"><div className="panel-heading"><div><h2>Ilha no desktop</h2><p className="muted">O que você quer ver enquanto trabalha?</p></div><Eye size={20} className="muted" /></div>
-          <fieldset className="settings-fieldset"><legend className="sr-only">Conteúdo da ilha em repouso</legend><div className="idle-choices">{idleOptions.map(({ value, label, detail, Icon }) =>
+          <fieldset className="settings-fieldset" aria-describedby={hybrid ? 'island-visibility-help' : undefined}><legend className="label">Visibilidade da ilha</legend><div className="idle-choices">{visibilityOptions.map(({ value, label, detail, Icon }) =>
+            <label className={'idle-choice ' + (p.islandVisibility === value ? 'selected' : '')} key={value}><input type="radio" name="island-visibility" value={value} checked={p.islandVisibility === value}
+              onChange={() => p.updatePreferences({ islandVisibility: value })} /><Icon size={19} aria-hidden="true" /><span><strong>{label}</strong><small>{detail}</small></span></label>)}</div></fieldset>
+          <div className="island-delay-setting"><label htmlFor="island-hide-delay">Esconder após</label>
+            <select id="island-hide-delay" className="field" value={p.islandHideDelay} disabled={!hybrid} onChange={event => p.updatePreferences({ islandHideDelay: Number(event.target.value) as 3 | 5 | 10 })}>
+              <option value={3}>3 segundos</option><option value={5}>5 segundos</option><option value={10}>10 segundos</option>
+            </select></div>
+          {hybrid && <p className="settings-help" id="island-visibility-help">Para revelar, mantenha o mouse no centro da borda superior por um instante. Seu foco e sua música continuam quando a ilha está escondida.</p>}
+          {!isTauri() && <p className="settings-help">O modo híbrido funciona no aplicativo para Windows. Esta prévia no navegador não controla as outras janelas.</p>}
+          <fieldset className="settings-fieldset"><legend className="label">Conteúdo da ilha em repouso</legend><div className="idle-choices">{idleOptions.map(({ value, label, detail, Icon }) =>
             <label className={'idle-choice ' + (p.islandIdle === value ? 'selected' : '')} key={value}><input type="radio" name="island" value={value} checked={p.islandIdle === value}
               onChange={() => p.updatePreferences({ islandIdle: value })} /><Icon size={19} aria-hidden="true" /><span><strong>{label}</strong><small>{detail}</small></span></label>)}</div></fieldset>
           <label className="slider-label" htmlFor="island-opacity"><span>Opacidade da ilha</span><output>{Math.round(p.islandOpacity * 100)}%</output></label>

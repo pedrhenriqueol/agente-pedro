@@ -11,12 +11,25 @@ import { initializeStateBridge } from './services/stateBridge';
 import { initializePreferencesSync, usePreferencesStore } from './stores/usePreferencesStore';
 import { requestPage, setDockVisible } from './lib/desktop';
 import { initializeMedia } from './stores/useMediaStore';
+import { initializeIslandVisibility, useIslandVisibilityStore } from './stores/useIslandVisibilityStore';
 
 export default function App() {
   const [label, setLabel] = useState<string | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [attempt, setAttempt] = useState(0);
   const preferences = usePreferencesStore();
+  const islandVisibility = useIslandVisibilityStore(state => state.snapshot);
+  useEffect(() => {
+    if (label !== 'island') return;
+    let cancelled = false;
+    let dispose: (() => void) | undefined;
+    void initializeIslandVisibility().then(cleanup => { if (cancelled) cleanup(); else dispose = cleanup; });
+    return () => { cancelled = true; dispose?.(); };
+  }, [label]);
+  useEffect(() => {
+    if (label === 'island') void useIslandVisibilityStore.getState()
+      .configure(preferences.islandVisibility, preferences.islandHideDelay).catch(() => {});
+  }, [label, preferences.islandVisibility, preferences.islandHideDelay]);
   useEffect(() => {
     let cancelled = false;
     let dispose: (() => void) | undefined;
@@ -73,7 +86,8 @@ export default function App() {
     if (label && label !== 'dock') void setDockVisible(preferences.dockEnabled).catch(() => {});
   }, [label, preferences.dockEnabled]);
   if (label === 'island' || label === 'dock') {
-    if (phase !== 'ready') return <div className={`desktop-widget-shell ${label}-shell`}>
+    if (phase !== 'ready') return <div className={`desktop-widget-shell ${label}-shell`}
+      aria-hidden={label === 'island' && !islandVisibility.visible} inert={label === 'island' && !islandVisibility.visible || undefined}>
       <div className="widget-boot" role={phase === 'error' ? 'alert' : 'status'}>
         <span><strong>{phase === 'error' ? 'Não foi possível abrir seus dados' : 'Preparando seu espaço…'}</strong>
           {phase === 'error' && <small>Seus registros não foram substituídos.</small>}</span>

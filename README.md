@@ -9,6 +9,7 @@ Aplicativo pessoal para Windows 10/11, com tarefas, hábitos, foco e finanças g
 - **Finanças:** contas, entradas, saídas, histórico e limites mensais por categoria. Valores são armazenados em centavos; registrar uma movimentação também atualiza o saldo.
 - **Música:** faixa, artista, capa, pausa/reprodução, anterior/próxima e volume do Windows, no painel e na ilha. Acompanha o SoundCloud no navegador quando a reprodução é publicada pelo Windows; não requer chave de API nem serviço pago.
 - **Aparência:** temas claro, escuro ou do sistema, cor de destaque, movimento reduzido, conteúdo e opacidade da ilha, e visibilidade e opacidade do dock.
+- **Ilha fixa ou híbrida:** no Windows, escolha manter a ilha visível ou escondê-la por inatividade/tela cheia. O modo híbrido usa 3 segundos por padrão e revela pela borda superior sem tomar o foco. Veja [como usar](docs/ILHA_HIBRIDA.md).
 - **Desktop:** ilha expansível, dock de atalhos e painel. `Alt + Espaço` mostra ou oculta o painel; `Ctrl + K` abre a busca de áreas.
 
 ## Requisitos
