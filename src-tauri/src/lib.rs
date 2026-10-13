@@ -5,6 +5,27 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 mod media;
 mod island_visibility;
 mod desktop_integration;
+mod diagnostics;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StartupStage {
+    FrontendLoaded,
+    DataLoading,
+    FrontendReady,
+    FrontendError,
+}
+
+#[tauri::command]
+fn startup_status(window: tauri::WebviewWindow, stage: StartupStage, message: Option<String>) {
+    let stage = match stage {
+        StartupStage::FrontendLoaded => "frontend_loaded",
+        StartupStage::DataLoading => "data_loading",
+        StartupStage::FrontendReady => "frontend_ready",
+        StartupStage::FrontendError => "frontend_error",
+    };
+    diagnostics::write(stage, format!("{}: {}", window.label(), message.as_deref().unwrap_or("")));
+}
 
 // The native bounds include the 12 logical pixels used by each widget's shadow.
 const ISLAND_WIDTH: f64 = 404.0;
@@ -137,8 +158,12 @@ fn configurar_dock(app: AppHandle, visivel: bool) -> Result<(), String> {
 }
 
 pub fn run() {
+    diagnostics::initialize();
+    diagnostics::write("identity", "Configurando identidade do processo");
     desktop_integration::prepare_process_identity();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        .manage(desktop_integration::DesktopMenuState::default())
+        .manage(desktop_integration::TaskbarState::default())
         .manage(desktop_integration::DesktopLaunchState::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| desktop_integration::handle_launch_args(app, &args)))
         .manage(media::MediaState::default())
@@ -158,6 +183,7 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            startup_status,
             alternar_console,
             abrir_painel,
             expandir_ilha,
@@ -174,18 +200,51 @@ pub fn run() {
             desktop_integration::focus_taskbar_progress,
             desktop_integration::desktop_initial_page,
         ])
+        .on_page_load(|window, payload| {
+            diagnostics::write("webview", format!("{}: {:?}", window.label(), payload.event()));
+        })
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::CloseRequested { .. } => diagnostics::write("window_close_requested", window.label()),
+                tauri::WindowEvent::Destroyed => diagnostics::write("window_destroyed", window.label()),
+                _ => {}
+            }
+        })
         .setup(|app| {
+            diagnostics::write("setup", "Janelas criadas; iniciando serviços");
             let handle = app.handle().clone();
-            desktop_integration::init(&handle)?;
+            if let Err(error) = desktop_integration::init(&handle) {
+                // Menus/tray are complementary; they must not abort data or widgets.
+                diagnostics::write("desktop_warning", error.to_string());
+            }
+            diagnostics::write("media", "Iniciando serviço de música");
             media::start(&handle);
             centralizar_ilha_topo(&handle);
+            diagnostics::write("visibility", "Iniciando visibilidade da ilha");
             island_visibility::start(&handle);
             centralizar_dock_base(&handle);
             if let Ok(shortcut) = Shortcut::from_str("Alt+Space") {
-                let _ = app.global_shortcut().register(shortcut);
+                if let Err(error) = app.global_shortcut().register(shortcut) {
+                    diagnostics::write("shortcut_warning", error.to_string());
+                }
             }
+            desktop_integration::handle_initial_launch(&handle);
+            diagnostics::write("setup_ready", "Serviços inicializados");
             Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("erro ao executar aplicação Tauri do Agente Pedro");
+        });
+    diagnostics::write("build", "Construindo runtime Tauri");
+    let app = match builder.build(tauri::generate_context!()) {
+        Ok(app) => app,
+        Err(error) => {
+            diagnostics::fatal(&format!("Não foi possível iniciar o Agente Pedro: {error}"));
+            std::process::exit(1);
+        }
+    };
+    diagnostics::write("run", "Iniciando event loop");
+    app.run(|_, event| match event {
+        tauri::RunEvent::Ready => diagnostics::write("runtime_ready", "Event loop pronto"),
+        tauri::RunEvent::ExitRequested { code, .. } => diagnostics::write("exit_requested", format!("code={code:?}")),
+        tauri::RunEvent::Exit => diagnostics::write("exit", "Runtime encerrado"),
+        _ => {}
+    });
 }

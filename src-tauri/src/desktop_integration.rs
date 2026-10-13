@@ -24,11 +24,28 @@ struct MenuPreferences {
     dock: bool,
 }
 
-struct DesktopMenuState {
+#[derive(Clone)]
+struct DesktopMenuItems {
     fixed: CheckMenuItem<tauri::Wry>,
     hybrid: CheckMenuItem<tauri::Wry>,
     dock: CheckMenuItem<tauri::Wry>,
-    preferences: Mutex<MenuPreferences>,
+}
+
+struct MenuRuntime {
+    items: Option<DesktopMenuItems>,
+    preferences: MenuPreferences,
+}
+
+/// Exists before WebViews; preferences can arrive before native items exist.
+pub(crate) struct DesktopMenuState(Mutex<MenuRuntime>);
+
+impl Default for DesktopMenuState {
+    fn default() -> Self {
+        Self(Mutex::new(MenuRuntime {
+            items: None,
+            preferences: MenuPreferences { mode: IslandMode::Fixed, dock: false },
+        }))
+    }
 }
 
 #[derive(Default)]
@@ -60,7 +77,7 @@ impl Default for FocusProgress {
 }
 
 #[derive(Clone, Default)]
-struct TaskbarState {
+pub(crate) struct TaskbarState {
     progress: Arc<Mutex<FocusProgress>>,
     #[cfg(windows)]
     ready: Arc<std::sync::atomic::AtomicBool>,
@@ -93,7 +110,7 @@ pub struct MaterialResult {
 pub fn prepare_process_identity() {
     #[cfg(windows)]
     if let Err(error) = platform::prepare_process_identity() {
-        eprintln!("Identidade do ícone do Pedro indisponível: {error}");
+        super::diagnostics::write("identity_warning", error.to_string());
     }
 }
 
@@ -137,20 +154,13 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    app.manage(DesktopMenuState {
-        fixed,
-        hybrid,
-        dock,
-        preferences: Mutex::new(MenuPreferences {
-            mode: IslandMode::Fixed,
-            dock: false,
-        }),
-    });
-    // The builder installs this before the single-instance plugin. manage keeps
-    // the existing state, including routes received while native windows load.
-    app.manage(DesktopLaunchState::default());
-    let taskbar = TaskbarState::default();
-    app.manage(taskbar.clone());
+    let state = app.try_state::<DesktopMenuState>()
+        .ok_or_else(|| std::io::Error::other("O estado do menu não está disponível."))?;
+    state.0.lock().unwrap_or_else(|error| error.into_inner()).items = Some(DesktopMenuItems { fixed, hybrid, dock });
+    // Keep pending preferences received while main/dock WebViews were created.
+    apply_menu_state(app).map_err(std::io::Error::other)?;
+    let taskbar = app.try_state::<TaskbarState>()
+        .ok_or_else(|| std::io::Error::other("O estado da taskbar não está disponível."))?.inner().clone();
 
     // generate_context normally supplies the ICO. The packaged PNG is an explicit
     // fallback so a missing optional config icon never leaves an invisible tray.
@@ -179,12 +189,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 } else {
                     IslandMode::Hybrid
                 };
-                let dock = app
-                    .state::<DesktopMenuState>()
-                    .preferences
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .dock;
+                let dock = menu_preferences(app).map(|preferences| preferences.dock).unwrap_or(false);
                 let _ = sync_menu(app, mode, dock);
                 let value = if mode == IslandMode::Fixed {
                     "fixed"
@@ -197,11 +202,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 );
             }
             "dock" => {
-                let state = app.state::<DesktopMenuState>();
-                let preferences = *state
-                    .preferences
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner());
+                let Some(preferences) = menu_preferences(app) else { return; };
                 let enabled = !preferences.dock;
                 let _ = sync_menu(app, preferences.mode, enabled);
                 let _ = app.emit(
@@ -209,7 +210,10 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                     serde_json::json!({"dockEnabled": enabled}),
                 );
             }
-            "quit" => app.exit(0),
+            "quit" => {
+                super::diagnostics::write("quit", "Sair selecionado na bandeja");
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -226,14 +230,14 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         .build(app);
     if let Err(error) = tray {
         // Shell availability must not take down local data, music or Alt+Space.
-        eprintln!("Ícone do Pedro na bandeja indisponível: {error}");
+        super::diagnostics::write("tray_warning", error.to_string());
     }
 
     #[cfg(windows)]
     {
         if let Some(main) = app.get_webview_window("main") {
             if let Err(error) = platform::init_taskbar(&main, taskbar) {
-                eprintln!("Progresso no ícone do Pedro indisponível: {error}");
+                super::diagnostics::write("taskbar_warning", error);
             }
         }
         // A development executable must never replace the installed app's Jump
@@ -242,45 +246,64 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         if !cfg!(debug_assertions) {
             std::thread::spawn(|| {
                 if let Err(error) = platform::install_jump_list() {
-                    eprintln!("Atalhos no ícone do Pedro indisponíveis: {error}");
+                    super::diagnostics::write("jump_list_warning", error);
                 }
             });
         }
     }
+    Ok(())
+}
+
+/// Explicit panel launch remains available even if optional menu creation failed.
+pub fn handle_initial_launch(app: &AppHandle) {
     let args: Vec<String> = std::env::args_os()
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let page = {
-        let state = app.state::<DesktopLaunchState>();
+        let Some(state) = app.try_state::<DesktopLaunchState>() else { return; };
         let mut pending = state.0.lock().unwrap_or_else(|error| error.into_inner());
         let selected = initial_launch_page(&args, pending.as_deref());
         *pending = selected.clone();
         selected
     };
     if let Some(page) = page {
-        let _ = super::abrir_painel(app.clone(), page);
+        if let Err(error) = super::abrir_painel(app.clone(), page) {
+            super::diagnostics::write("launch_warning", error);
+        }
     }
-    Ok(())
 }
 
 fn sync_menu(app: &AppHandle, mode: IslandMode, dock: bool) -> Result<(), String> {
-    let state = app.state::<DesktopMenuState>();
-    *state
-        .preferences
-        .lock()
-        .unwrap_or_else(|error| error.into_inner()) = MenuPreferences { mode, dock };
-    state
-        .fixed
-        .set_checked(mode == IslandMode::Fixed)
-        .map_err(|error| error.to_string())?;
-    state
-        .hybrid
-        .set_checked(mode == IslandMode::Hybrid)
-        .map_err(|error| error.to_string())?;
-    state
-        .dock
-        .set_checked(dock)
-        .map_err(|error| error.to_string())
+    let state = app.try_state::<DesktopMenuState>()
+        .ok_or_else(|| "O menu desktop não está disponível nesta execução.".to_string())?;
+    state.0.lock().unwrap_or_else(|error| error.into_inner()).preferences = MenuPreferences { mode, dock };
+    // Read the latest values on the UI thread; queued old commands do not reset
+    // a newer selection. Release state locks before any native menu operation.
+    let ui = app.clone();
+    app.run_on_main_thread(move || {
+        if let Err(error) = apply_menu_state(&ui) {
+            super::diagnostics::write("menu_warning", error);
+        }
+    }).map_err(|error| error.to_string())
+}
+
+fn menu_preferences(app: &AppHandle) -> Option<MenuPreferences> {
+    let state = app.try_state::<DesktopMenuState>()?;
+    let preferences = state.0.lock().unwrap_or_else(|error| error.into_inner()).preferences;
+    Some(preferences)
+}
+
+fn apply_menu_state(app: &AppHandle) -> Result<(), String> {
+    let state = app.try_state::<DesktopMenuState>()
+        .ok_or_else(|| "O menu desktop não está disponível nesta execução.".to_string())?;
+    let (items, preferences) = {
+        let runtime = state.0.lock().unwrap_or_else(|error| error.into_inner());
+        (runtime.items.clone(), runtime.preferences)
+    };
+    let Some(items) = items else { return Ok(()); };
+    items.fixed.set_checked(preferences.mode == IslandMode::Fixed).map_err(|error| error.to_string())?;
+    items.hybrid.set_checked(preferences.mode == IslandMode::Hybrid).map_err(|error| error.to_string())?;
+    items.dock.set_checked(preferences.dock).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -318,6 +341,7 @@ fn remember_page(app: &AppHandle, page: &str) {
 
 /// Called by the single-instance plugin; never launches another database/media worker.
 pub fn handle_launch_args(app: &AppHandle, args: &[String]) {
+    super::diagnostics::write("second_instance", "Encaminhando abertura ao processo existente");
     let page = launch_page(args).unwrap_or("home");
     remember_page(app, page);
     let _ = super::abrir_painel(app.clone(), page.into());
@@ -403,7 +427,9 @@ pub fn focus_taskbar_progress(
         return Err("Somente o painel atualiza o progresso do próprio ícone.".into());
     }
     let progress = normalized_progress(state, completed, total)?;
-    let taskbar = app.state::<TaskbarState>().inner().clone();
+    let taskbar = app.try_state::<TaskbarState>()
+        .ok_or_else(|| "O progresso no ícone não está disponível nesta execução.".to_string())?
+        .inner().clone();
     *taskbar
         .progress
         .lock()

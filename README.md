@@ -68,3 +68,5 @@ Veja o escopo e os limites desta entrega em [docs/REFATORACAO.md](docs/REFATORAC
 A [análise visual comparativa](docs/ANALISE_VISUAL.md) registra a direção de design e o alcance implementado. O [relatório de design](docs/DESIGN_REPORT_DESKTOP.md) e o [tracker](docs/PROJECT_TRACKER_DESKTOP.md) registram evidências e a validação pendente em Windows real.
 
 O [relatório de transições](docs/DESIGN_REPORT_MOTION.md) detalha resposta ao clique, categorias e opções avançadas preservadas, diálogos com saída e menus contínuos da ilha, incluindo interrupções e movimento reduzido.
+
+Se o executável encerrar durante “Preparando seu espaço”, consulte o [diagnóstico de inicialização](docs/SYSTEM_DESIGN_STARTUP.md). O aplicativo registra os estágios em `%LOCALAPPDATA%\com.pedro.agente-pedro\logs\startup.log`, com fallback em `%TEMP%\agente-pedro\logs\startup.log`.

@@ -16,6 +16,7 @@
 | F05 | Bandeja, Jump Lists e progresso | Média | Tauri/Windows | Implementado; QA Windows pendente | Checagem Windows aprovada; apenas próprio aplicativo, instância única |
 | F06 | Material nativo com fallback | Média | DWM/WebView | Implementado; QA Windows pendente | Mica apenas no painel, API pública e caminho sólido |
 | F07 | Cliques, menus, submenus e diálogos coreografados | Alta | Presença/WAAPI/resize existente | Concluído; QA Windows pendente | Interrupções sem flash, categorias preservadas, saída de modais e ilha sem corpo vazio |
+| F08 | Inicialização resiliente e diagnóstico local | Alta | Builder/estados nativos | Corrigido; confirmação Windows pendente | Corrida `DesktopMenuState` identificada por log físico; estados pré-gerenciados, preferências preservadas e panic registrado |
 
 ## 3. Riscos e bloqueios
 
@@ -29,5 +30,6 @@ Validação gráfica nativa depende de máquina Windows. A nuvem permite compila
 - Chromium: continuidade de mídia, categorias/persistência, navegação/formulários/modais, teclado, movimento reduzido local/sistema, mensagens extensas e recuperações de resize. Geometria capturada por quadro cabe nos frames nativos simulados, inclusive com resposta antiga após reabrir.
 - Evidências finais em [DESIGN_REPORT_DESKTOP.md](DESIGN_REPORT_DESKTOP.md); roteiro Windows em [DESKTOP.md](DESKTOP.md).
 - Refinamento baseado no vídeo atualizado: [DESIGN_REPORT_MOTION.md](DESIGN_REPORT_MOTION.md). Cliques com alvo estável, disclosures reversíveis, indicador persistente e trocas sem reset da opacidade; 59 amostras da ilha sem corpo vazio/recorte, seis reversões aprovadas.
+- Correção de abertura: [SYSTEM_DESIGN_STARTUP.md](SYSTEM_DESIGN_STARTUP.md). Diagnóstico recebido: panic `state() called before manage()` e saída `0xC0000409`. Verificação atual: 72 testes Node, seis testes do logger, build e cargo check Windows aprovados; recompilação/execução física pendente.
 - Commit de música: `cf65c73`; painel/integração: `46db1b2`; ilha: `f0802ef`.
 - Base preservada: commit do usuário `79f071f`, incluindo AGENTS.md, skills e templates sem alterações nesta entrega. SQLite, esquema, cálculos monetários e armazenamento dos registros não foram modificados.

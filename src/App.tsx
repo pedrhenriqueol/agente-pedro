@@ -14,6 +14,7 @@ import { initializeMedia } from './stores/useMediaStore';
 import { initializeIslandVisibility, useIslandVisibilityStore } from './stores/useIslandVisibilityStore';
 import { applyPanelMaterial, configureDesktopMenu, initialDesktopPage, updateFocusProgress } from './services/nativeDesktop';
 import { useControlFeedback } from './hooks/useControlFeedback';
+import { reportStartupStatus } from './services/startupDiagnostics';
 
 export default function App() {
   useControlFeedback();
@@ -47,7 +48,7 @@ export default function App() {
     let cancelled = false;
     const detect = async () => {
       const value = '__TAURI_INTERNALS__' in window ? getCurrentWindow().label : new URLSearchParams(location.search).get('window') || 'main';
-      if (!cancelled) setLabel(value);
+      if (!cancelled) { setLabel(value); void reportStartupStatus('frontend_loaded'); }
     };
     void detect().catch(() => { if (!cancelled) { setLabel('main'); setPhase('error'); } });
     return () => { cancelled = true; };
@@ -105,13 +106,16 @@ export default function App() {
     let cancelled = false; let disposeBridge: (() => void) | undefined; let disposePreferences: (() => void) | undefined;
     setPhase('loading');
     const boot = async () => {
+      void reportStartupStatus('data_loading');
       disposeBridge = await initializeStateBridge();
       disposePreferences = await initializePreferencesSync();
       if (cancelled) { disposeBridge(); disposePreferences(); return; }
       await Promise.all([useFocusStore.getState().loadInitialData(), useFinanceStore.getState().loadFinancialData()]);
-      if (!cancelled) setPhase('ready');
+      if (!cancelled) { setPhase('ready'); void reportStartupStatus('frontend_ready'); }
     };
-    void boot().catch(() => { if (!cancelled) setPhase('error'); });
+    void boot().catch((error: unknown) => {
+      if (!cancelled) { setPhase('error'); void reportStartupStatus('frontend_error', error); }
+    });
     return () => { cancelled = true; disposeBridge?.(); disposePreferences?.(); };
   }, [label, attempt]);
   useEffect(() => {
