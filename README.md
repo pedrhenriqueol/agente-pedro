@@ -8,9 +8,10 @@ Aplicativo pessoal para Windows 10/11, com tarefas, hábitos, foco e finanças g
 - **Rotinas e foco:** tarefas com prioridade, hábitos e Pomodoro de 25 minutos com pausa de 5 minutos. Painel e ilha compartilham seleção, tempo, pausa e conclusão da sessão.
 - **Finanças:** contas, entradas, saídas, histórico e limites mensais por categoria. Valores são armazenados em centavos; registrar uma movimentação também atualiza o saldo.
 - **Música:** faixa, artista, capa, pausa/reprodução, anterior/próxima e volume do Windows, no painel e na ilha. Acompanha o SoundCloud no navegador quando a reprodução é publicada pelo Windows; não requer chave de API nem serviço pago.
-- **Aparência:** temas claro, escuro ou do sistema, cor de destaque, movimento reduzido, conteúdo e opacidade da ilha, e visibilidade e opacidade do dock.
+- **Aparência:** categorias Ilha, Navegação, Aparência e Acessibilidade, com prévia, temas, cor de destaque, opacidade, sidebar recolhível e movimento reduzido. Material nativo opcional no painel, com fallback sólido.
 - **Ilha fixa ou híbrida:** no Windows, escolha manter a ilha visível ou escondê-la por inatividade/tela cheia. O modo híbrido usa 3 segundos por padrão e revela pela borda superior sem tomar o foco. Veja [como usar](docs/ILHA_HIBRIDA.md).
-- **Desktop:** ilha expansível, dock de atalhos e painel. `Alt + Espaço` mostra ou oculta o painel; `Ctrl + K` abre a busca de áreas.
+- **Desktop:** ilha com cabeçalho contínuo, menu contextual e ajustes rápidos. Dock opcional, desligado para novos usuários; escolhas já salvas são preservadas. `Alt + Espaço` mostra ou oculta o painel; `Ctrl + K` abre a busca de áreas.
+- **Windows:** menu na bandeja, Jump List de Rotinas/Música/Finanças e progresso do foco no próprio ícone do painel. Veja [acessos e materiais](docs/DESKTOP.md).
 
 ## Requisitos
 
@@ -54,7 +55,7 @@ Os controles de música dependem do aplicativo desktop no Windows. O preview mos
 npm run tauri dev
 ```
 
-O Tauri inicia o servidor da interface e abre a ilha e o dock. Abra o painel por um atalho dos widgets ou por `Alt + Espaço`. Ocultar o painel mantém os widgets e a sessão de foco ativos.
+O Tauri inicia o servidor da interface e abre a ilha. O dock aparece quando habilitado nas preferências. Abra o painel pelo menu da ilha, pela bandeja ou por `Alt + Espaço`. Ocultar o painel mantém a música e a sessão de foco ativas.
 
 ## Dados e validação
 
@@ -64,4 +65,4 @@ O desktop mantém o banco `agente_pedro.db` no diretório local do aplicativo. A
 
 Veja o escopo e os limites desta entrega em [docs/REFATORACAO.md](docs/REFATORACAO.md).
 
-A [análise visual comparativa](docs/ANALISE_VISUAL.md) registra a proposta de evolução da navegação, transições e integração com o Windows. As melhorias propostas nesse documento ainda não foram aplicadas.
+A [análise visual comparativa](docs/ANALISE_VISUAL.md) registra a direção de design e o alcance implementado. O [relatório de design](docs/DESIGN_REPORT_DESKTOP.md) e o [tracker](docs/PROJECT_TRACKER_DESKTOP.md) registram evidências e a validação pendente em Windows real.

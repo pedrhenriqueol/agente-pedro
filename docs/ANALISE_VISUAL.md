@@ -8,7 +8,17 @@ Comparação dos vídeos enviados pelo usuário:
 - Agente Pedro: `explorer_y9JFKhyWjz.mp4`, 39,20 segundos.
 - Ambos em 1920 × 1080, gravados a 30 quadros por segundo. Foram inspecionados quadros representativos e sequências próximas às transições. A taxa da gravação não comprova o FPS, a latência ou o consumo da aplicação.
 
-Esta análise propõe uma evolução de design; os novos menus, materiais, transições e mudanças do dock descritos aqui ainda não foram implementados. O modo fixo/híbrido solicitado anteriormente é uma entrega separada. O vídeo do Pedro antecede esse modo.
+Esta análise registra o diagnóstico dos vídeos e a direção de design aprovada. A evolução implementada está descrita na seção seguinte e no [relatório de design](DESIGN_REPORT_DESKTOP.md). As observações do vídeo e as causas abaixo se referem ao código anterior à evolução. O vídeo do Pedro também antecede o modo fixo/híbrido, entregue separadamente.
+
+## Alcance implementado
+
+- Continuidade de música: durante uma ausência transitória, metadados são conservados por até 1.150 ms, sem prolongar o prazo por amostras vazias repetidas. Progresso fica congelado e transporte desabilitado até existir uma sessão real; erros aparecem imediatamente.
+- Ilha com cabeçalho persistente, apresentação interrompível, menu de áreas por mouse/teclado e ajustes rápidos. O frame nativo é preparado antes da entrada e recolhido após a saída; ocultar não encerra música ou foco.
+- Dock opcional, desligado por padrão apenas quando não há escolha salva. Sidebar recolhível; páginas visitadas conservam formulários e scroll, enquanto portais e foco de páginas inativas são suspensos.
+- Personalização em Ilha, Navegação, Aparência e Acessibilidade, com prévia e opções avançadas expansíveis.
+- Bandeja própria, Jump List em builds release, instância única e progresso de foco no ícone do painel. Mica pelo DWM documentado somente no painel, com fallback sólido; widgets conservam margens transparentes.
+
+Não foram adicionados botões de miniatura, AppBar, seleção de monitor/escala nem modificações da taskbar do Explorer. Esses itens da investigação eram alternativas para prototipagem e exigem validação específica. A execução nativa, DPI e desempenho ainda precisam ser conferidos em Windows real; compilação cruzada e Chromium não comprovam esses comportamentos.
 
 ## Diagnóstico
 
@@ -51,7 +61,7 @@ A ilha deve ser o resumo da atividade, com uma única entrada para as áreas. O 
 - Música: capa pequena, faixa e estado de reprodução; ao interagir, transporte compacto.
 - Foco: tempo, tarefa selecionada e estado; a música permanece acessível sem competir com o resumo principal.
 - Menu ancorado: Hoje, Rotinas, Música, Finanças e Aparência. A área atual tem destaque; as demais não precisam ocupar a ilha o tempo inteiro.
-- Configurações rápidas: modo fixo/híbrido, tema, destaque e volume. Opções menos usadas ficam no painel.
+- Configurações rápidas: modo fixo/híbrido, tema e volume. Cor de destaque e opções menos usadas ficam no painel.
 - Painel: navegação estável e recolhível, paleta `Ctrl+K`, formulários e operações completas.
 - Bandeja do Windows: abertura do painel, modos de visibilidade, configurações e sair, sem obrigar o usuário a manter widgets visíveis.
 

@@ -26,7 +26,7 @@ Dados de preview no navegador e dados SQLite do desktop permanecem separados. Pr
 ## Validação e limites
 
 - **30 testes automatizados** de banco, persistência e stores/sincronização, incluindo conexões SQLite alternadas, recuperação de uma sessão cujo salvamento falhou e ticks atrasados após comandos de outra janela.
-- A integração posterior de [música](MUSICA.md) acrescenta 12 cenários de IPC, controles e recuperação, totalizando **42 testes** na suíte atual.
+- A integração inicial de [música](MUSICA.md) acrescentou 12 cenários de IPC, controles e recuperação, totalizando **42 testes** naquela entrega. Com visibilidade híbrida, preferências e continuidade de mídia, a suíte atual tem **68 testes**.
 - Build da interface com TypeScript e Vite.
 - Verificações no navegador dos fluxos, widgets, temas, responsividade e preservação dos formulários após falha de gravação.
 - `cargo check` para o alvo Windows GNU passou. Isso verifica compilação cruzada, não execução nativa.
