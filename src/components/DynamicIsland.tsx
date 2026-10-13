@@ -7,9 +7,11 @@ import { requestPage, syncIslandSize, type DesktopPage } from '../lib/desktop';
 import { MusicPlayer, MusicVolume } from './MusicPlayer';
 import { useMediaStore } from '../stores/useMediaStore';
 import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
+import { IslandToday } from './IslandToday';
+import { IslandTaskSelection } from './IslandTaskSelection';
 import '../styles/desktop.css';
 
-type IslandView = 'activity' | 'menu' | 'settings';
+type IslandView = 'activity' | 'menu' | 'settings' | 'today';
 type IslandPhase = 'compact' | 'preparing' | 'expanding' | 'expanded' | 'switching' | 'collapsing';
 type Activity = 'focus' | 'music';
 const COMPACT_HEIGHT = 48;
@@ -70,7 +72,6 @@ export function DynamicIsland() {
   const recordPending = saving || saveFailed;
   const finished = focus.pomodoroState === 'completed';
   const selectedTask = focus.tasks.find(task => task.id === focus.selectedTaskId && task.completed === 0);
-  const pendingTasks = focus.tasks.filter(task => task.completed === 0).length;
   const progress = focus.totalDurationSeconds > 0 ? Math.max(0, Math.min(1, 1 - focus.remainingSeconds / focus.totalDurationSeconds)) : 0;
   const modeName = focus.currentMode === 'focus' ? 'Foco' : 'Pausa';
   const status = saveFailed ? 'Registro pendente' : saving ? 'Registrando sessão…' : finished ? 'Sessão concluída' : paused ? 'Sessão pausada' : active ? `${modeName} em andamento` : 'Um passo de cada vez';
@@ -402,9 +403,11 @@ export function DynamicIsland() {
     if (!bodyVisible || !visibility.visible) return;
     if (view === 'menu') menuItems.current[menuIndex]?.focus();
     else if (view === 'settings') settingsFirst.current?.focus();
+    else if (view === 'today') body.current?.querySelector<HTMLButtonElement>('.island-today [role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
     else if (focusActivityControl.current) {
       focusActivityControl.current = false;
-      (body.current?.querySelector<HTMLButtonElement>('button:not(:disabled)') || expander.current)?.focus();
+      // Today stays mounted while hidden; focus must belong to the visible activity.
+      (body.current?.querySelector<HTMLButtonElement>('.island-focus-block button:not(:disabled), .island-music-body button:not(:disabled)') || expander.current)?.focus({ preventScroll: true });
     }
   }, [bodyVisible, view, visibility.visible]);
 
@@ -421,7 +424,7 @@ export function DynamicIsland() {
   }
 
   const menu = [
-    { label: 'Hoje', icon: House, run: () => { void openPage('home'); } },
+    { label: 'Hoje', icon: House, run: () => switchView('today') },
     { label: 'Rotinas e foco', icon: ListTodo, run: () => { void openPage('routine'); } },
     { label: 'Música', icon: Music2, run: () => { void openPage('music'); } },
     { label: 'Finanças', icon: Wallet, run: () => { void openPage('finance'); } },
@@ -460,7 +463,7 @@ export function DynamicIsland() {
         if (event.key === 'F10' && event.shiftKey) { event.preventDefault(); openMenu(); }
         if (event.key === 'Escape' && requestedExpansion.current) {
           event.preventDefault();
-          if (view === 'settings') switchView('menu'); else closeIsland(true);
+          if (view === 'settings' || view === 'today') switchView('menu'); else closeIsland(true);
         }
       }}>
       <header className="island-header">
@@ -480,23 +483,28 @@ export function DynamicIsland() {
 
       <div id="island-details" ref={body} className={`island-details${bodyVisible ? ' is-visible' : ''}`} aria-hidden={!bodyVisible} inert={!bodyVisible || undefined}>
         <div className="island-details-content" ref={content}>
+        <div hidden={view !== 'today'} inert={view !== 'today' || undefined} aria-hidden={view !== 'today' || undefined}>
+          <div className="island-layer-heading island-today-heading"><button className="widget-icon-button" type="button" onClick={() => switchView('menu')} aria-label="Voltar ao menu"><ArrowLeft size={14} /></button><strong>Hoje</strong></div>
+          <IslandToday onOpenPanel={() => { void openPage('routine'); }} />
+        </div>
         {view === 'menu' ? <div id="island-menu" role="menu" aria-label="Menu do Pedro" className="island-menu" onKeyDown={menuKeys}>
-          {menu.map((item, index) => <button key={item.label} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem" tabIndex={menuIndex === index ? 0 : -1} onFocus={() => setMenuIndex(index)} onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
+          {menu.map((item, index) => <button key={item.label} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem" tabIndex={menuIndex === index ? 0 : -1} onFocus={() => setMenuIndex(index)} onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index > 0 && index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
         </div> : view === 'settings' ? <div className="island-quick-settings" role="group" aria-label="Ajustes rápidos">
           <div className="island-layer-heading"><button className="widget-icon-button" type="button" onClick={() => switchView('menu')} aria-label="Voltar ao menu"><ArrowLeft size={14} /></button><strong>Ajustes rápidos</strong></div>
           <fieldset className="island-preference"><legend>Tema</legend><div className="island-segments">{([{ value: 'system', label: 'Sistema' }, { value: 'dark', label: 'Escuro' }, { value: 'light', label: 'Claro' }] as const).map((item, index) => <button ref={index === 0 ? settingsFirst : undefined} key={item.value} type="button" aria-pressed={preferences.theme === item.value} onClick={() => preferences.updatePreferences({ theme: item.value })}>{item.label}</button>)}</div></fieldset>
-          <fieldset className="island-preference"><legend>Presença da ilha</legend><div className="island-segments">{([{ value: 'fixed', label: 'Fixa' }, { value: 'hybrid', label: 'Híbrida' }] as const).map(item => <button key={item.value} type="button" aria-pressed={preferences.islandVisibility === item.value} onClick={() => preferences.updatePreferences({ islandVisibility: item.value })}>{item.label}</button>)}</div><p>{preferences.islandVisibility === 'hybrid' ? `Oculta após ${preferences.islandHideDelay} segundos ou em tela cheia.` : 'Permanece disponível no topo da tela.'}</p></fieldset>
+          <fieldset className="island-preference"><legend>Presença da ilha</legend><div className="island-segments">{([{ value: 'fixed', label: 'Fixa' }, { value: 'hybrid', label: 'Híbrida' }] as const).map(item => <button key={item.value} type="button" aria-pressed={preferences.islandVisibility === item.value} onClick={() => preferences.updatePreferences({ islandVisibility: item.value })}>{item.label}</button>)}</div><p>{preferences.islandVisibility === 'hybrid' ? `Oculta após ${preferences.islandHideDelay} segundos ou em tela cheia. Aproxime o mouse do lugar da ilha para revelar.` : 'Permanece disponível no topo da tela.'}</p></fieldset>
           <label className="island-preference-toggle"><span>Barra de atalhos no desktop</span><input type="checkbox" checked={preferences.dockEnabled} onChange={event => preferences.updatePreferences({ dockEnabled: event.target.checked })} /></label>
           <MusicVolume />
           <button className="island-settings-link" type="button" onClick={() => openPage('appearance')}>Todas as opções de aparência<ArrowUpRight size={12} /></button>
-        </div> : <>
+        </div> : view !== 'today' ? <>
           {activity === 'music' ? <div className="island-music-body"><MusicPlayer compact showIdentity={false} showVolume={false} /></div> : <div className="island-focus-block">
             <div className="island-focus-top"><div className="island-mode-picker" role="group" aria-label="Tipo de sessão"><button type="button" aria-pressed={focus.currentMode === 'focus'} onClick={() => focus.setPomodoroMode('focus')} disabled={active || paused || recordPending}>Foco</button><button type="button" aria-pressed={focus.currentMode === 'break'} onClick={() => focus.setPomodoroMode('break')} disabled={active || paused || recordPending}><Coffee size={12} />Pausa</button></div><span className="island-clock">{currentTime}</span></div>
             <div className="island-timer-line"><div><span className="island-timer" role="timer" aria-label={`Tempo restante: ${formatTimer(focus.remainingSeconds)}`}>{formatTimer(focus.remainingSeconds)}</span><p className="island-task-name" title={selectedTask?.title}>{saveFailed ? 'Tente registrar novamente pelo botão ao lado.' : selectedTask?.title || (focus.currentMode === 'break' ? 'Respire. Você merece uma pausa.' : 'Escolha uma tarefa ou apenas comece.')}</p></div><div className="island-timer-actions"><button className="island-play-button" type="button" onClick={controlTimer} disabled={saving || (saveFailed && focus.isLoading)} aria-label={saveFailed ? 'Tentar registrar sessão novamente' : active ? 'Pausar sessão' : paused ? 'Continuar sessão' : 'Iniciar sessão'} title={saveFailed ? 'Tentar registrar novamente' : active ? 'Pausar' : paused ? 'Continuar' : 'Iniciar'}>{saveFailed ? <RefreshCw size={17} /> : active ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button><button className="widget-icon-button" type="button" onClick={focus.resetPomodoro} disabled={recordPending} aria-label="Reiniciar sessão" title="Reiniciar"><RotateCcw size={15} /></button></div></div>
             <div className="island-progress" role="progressbar" aria-label="Progresso da sessão" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><span style={{ transform: `scaleX(${progress})` }} /></div>
+            <IslandTaskSelection />
           </div>}
-          <footer className="island-summary"><button type="button" onClick={() => switchView('activity', activity === 'music' ? 'focus' : 'music')}>{activity === 'music' ? <Timer size={12} /> : <Music2 size={12} />}<span>{activity === 'music' ? 'Ver foco' : 'Ver música'}</span></button><button type="button" onClick={() => openPage(activity === 'music' ? 'music' : 'routine')}><CircleCheck size={12} /><span>{activity === 'focus' && pendingTasks ? `${pendingTasks} ${pendingTasks === 1 ? 'tarefa' : 'tarefas'} no painel` : 'Abrir painel'}</span><ArrowUpRight size={12} /></button></footer>
-        </>}
+          <footer className="island-summary"><button type="button" onClick={() => switchView('activity', activity === 'music' ? 'focus' : 'music')}>{activity === 'music' ? <Timer size={12} /> : <Music2 size={12} />}<span>{activity === 'music' ? 'Ver foco' : 'Ver música'}</span></button><button type="button" onClick={() => activity === 'music' ? void openPage('music') : switchView('today')}><CircleCheck size={12} /><span>{activity === 'focus' ? 'Ver meu dia' : 'Abrir painel'}</span>{activity === 'music' ? <ArrowUpRight size={12} /> : <ChevronDown size={12} />}</button></footer>
+        </> : null}
         {failure && <div className="island-error" role="alert"><span>{failure}</span><button type="button" onClick={() => { setError(''); closeIsland(); }} aria-label="Tentar recolher ilha novamente"><RefreshCw size={13} /></button></div>}
         </div>
       </div>

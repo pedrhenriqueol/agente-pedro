@@ -4,6 +4,10 @@ A ilha conserva a atividade no cabeçalho ao expandir ou recolher. Use o botão 
 
 O dock é uma alternativa opcional em **Aparência → Navegação**. Instalações novas começam sem os quatro atalhos flutuantes; um valor explicitamente salvo continua sendo respeitado. A sidebar do painel pode ser recolhida para ícones com nomes acessíveis. Trocar de área conserva formulários e posição de rolagem; modais de páginas inativas deixam de prender o teclado.
 
+Desligar o dock oculta seu HWND e ativa click-through nativo, retirando a área que poderia bloquear aplicativos. Mostrar/desligar usam o mesmo caminho Windows, com confirmação da visibilidade real. A própria WebView do dock aplica as preferências; pedidos rápidos aguardam confirmação e terminam na escolha mais recente.
+
+**Hoje**, no menu da ilha, abre tarefas e hábitos diretamente no widget. Crie uma tarefa para hoje, conclua uma pendência ou registre um hábito sem abrir o painel. Tarefas futuras ficam no planejamento completo; tarefas sem prazo e vencidas entram nesse resumo. “Ver rotina completa” mantém acesso a todos os registros. O rascunho e a aba escolhida permanecem quando você volta ao menu. Nos controles de foco, “Seu próximo passo” permite escolher uma tarefa antes de iniciar; uma sessão em andamento ou com registro pendente protege sua seleção.
+
 ## Acessos do Windows
 
 - **Bandeja:** duplo clique abre o painel; clique direito oferece áreas, modo fixo/híbrido, dock e saída do aplicativo. O Windows pode colocar o ícone no overflow da bandeja.
@@ -26,6 +30,6 @@ Nenhuma preferência global de autohide, registro, janela interna do Explorer ou
 
 Execute `npm ci`, `npm test`, `npm run build` e `npm run tauri dev` com os requisitos do README. Para Jump Lists, valide também uma instalação gerada por `npm run tauri build`.
 
-Confira música no SoundCloud, atualização entre faixas, menu por teclado, foco de outro aplicativo durante expansão, ocultação híbrida e reativação pela borda superior. Teste DPI de 100/125/150/200%, monitores distintos, aplicativos maximizados/F11 e retorno do Explorer. No painel, valide Mica/sólido e progresso do foco em execução/pausa/encerramento.
+Confira música no SoundCloud, atualização entre faixas, menu por teclado, foco de outro aplicativo durante expansão, ocultação híbrida e retorno ao aproximar o mouse do lugar da cápsula. Ligue/desligue o dock repetidamente e clique/selecione texto na aplicação que está atrás da área inferior: desligado deve deixar tudo acessível. Teste DPI de 100/125/150/200%, monitores distintos, aplicativos maximizados/F11 e retorno do Explorer. No painel, valide Mica/sólido e progresso do foco em execução/pausa/encerramento. Em Hoje, crie/conclua uma tarefa, registre um hábito e confira sincronização no painel.
 
 A validação na nuvem cobre a interface Chromium, testes de dados/stores/IPC e checagem Rust para Windows. WinRT, Shell, WebView2, posicionamento físico e frame time dependem dessa conferência nativa.

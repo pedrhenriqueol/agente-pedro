@@ -69,4 +69,6 @@ A [análise visual comparativa](docs/ANALISE_VISUAL.md) registra a direção de 
 
 O [relatório de transições](docs/DESIGN_REPORT_MOTION.md) detalha resposta ao clique, categorias e opções avançadas preservadas, diálogos com saída e menus contínuos da ilha, incluindo interrupções e movimento reduzido.
 
+O menu da ilha também oferece **Hoje**: criar/concluir tarefas e registrar hábitos sem abrir o painel. Os controles de foco permitem escolher a tarefa antes de iniciar. Veja o [relatório dessa evolução](docs/DESIGN_REPORT_TODAY.md) e a [correção de revelação híbrida e dock](docs/SYSTEM_DESIGN_WIDGET_RECOVERY.md).
+
 Se o executável encerrar durante “Preparando seu espaço”, consulte o [diagnóstico de inicialização](docs/SYSTEM_DESIGN_STARTUP.md). O aplicativo registra os estágios em `%LOCALAPPDATA%\com.pedro.agente-pedro\logs\startup.log`, com fallback em `%TEMP%\agente-pedro\logs\startup.log`.
