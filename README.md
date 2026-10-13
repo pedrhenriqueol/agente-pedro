@@ -66,3 +66,5 @@ O desktop mantém o banco `agente_pedro.db` no diretório local do aplicativo. A
 Veja o escopo e os limites desta entrega em [docs/REFATORACAO.md](docs/REFATORACAO.md).
 
 A [análise visual comparativa](docs/ANALISE_VISUAL.md) registra a direção de design e o alcance implementado. O [relatório de design](docs/DESIGN_REPORT_DESKTOP.md) e o [tracker](docs/PROJECT_TRACKER_DESKTOP.md) registram evidências e a validação pendente em Windows real.
+
+O [relatório de transições](docs/DESIGN_REPORT_MOTION.md) detalha resposta ao clique, categorias e opções avançadas preservadas, diálogos com saída e menus contínuos da ilha, incluindo interrupções e movimento reduzido.

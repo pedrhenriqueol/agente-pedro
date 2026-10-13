@@ -233,8 +233,9 @@ kbd { font: inherit; font-size: 10px; border: 1px solid var(--line); border-radi
 :root[data-reduce-motion='true'] .settings-section-content { animation: none; }
 :root[data-reduce-motion='true'] .settings-tabs > button, :root[data-reduce-motion='true'] .settings-preview-switch > button, :root[data-reduce-motion='true'] .settings-details > summary > svg { transition: none; }
 @media (prefers-reduced-motion: reduce) { .settings-section-content { animation: none; }.settings-tabs > button, .settings-preview-switch > button, .settings-details > summary > svg { transition: none; } }
-.dialog-backdrop { position: fixed; inset: 0; z-index: 1000; background: #070a0bcc; display: flex; align-items: center; justify-content: center; padding: 24px; animation: dialog-in .18s ease; }
-.dialog { width: min(100%, 540px); max-height: calc(100dvh - 48px); background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 20px; display: flex; flex-direction: column; box-shadow: 0 30px 100px #0006; animation: dialog-in .2s ease; outline: none; }
+.dialog-backdrop { position: fixed; inset: 0; z-index: 1000; background: #070a0bcc; display: flex; align-items: center; justify-content: center; padding: 24px; opacity: 0; }
+.dialog-backdrop[data-state='closing'] { pointer-events: none; }
+.dialog { width: min(100%, 540px); max-height: calc(100dvh - 48px); background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 20px; display: flex; flex-direction: column; box-shadow: 0 30px 100px #0006; opacity: 0; transform: translateY(4px) scale(.985); outline: none; }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 22px; padding: 25px 26px 18px; }
 .dialog-header h2 { font-size: 23px; }

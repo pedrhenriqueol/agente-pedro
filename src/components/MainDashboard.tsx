@@ -9,6 +9,7 @@ import { AppearancePage } from './AppearancePage';
 import { MusicPage } from './MusicPage';
 import { Dialog } from './ui/Dialog';
 import { PageTransition } from './ui/PageTransition';
+import { SelectionIndicator } from './ui/SelectionIndicator';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import type { Page } from '../lib/desktop';
 import '../styles/navigation.css';
@@ -53,7 +54,7 @@ export function MainDashboard() {
     const receive = (event: Event) => { const target = (event as CustomEvent).detail; if (isPage(target)) navigate(target); };
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-        if (document.querySelector('[role="dialog"]')) return;
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         event.preventDefault(); setQuery(''); setSearchOpen(true);
       }
     };
@@ -70,7 +71,9 @@ export function MainDashboard() {
         <nav ref={nav} id="area-navigation" aria-label="Áreas do aplicativo">{PAGES.map(({ id, name, Icon }) =>
           <button key={id} type="button" className={'nav-item ' + (page === id ? 'active' : '')} data-destination={id}
             aria-label={name} title={sidebarCollapsed ? name : undefined} aria-current={page === id ? 'page' : undefined}
-            onClick={() => navigate(id)}><Icon size={19} aria-hidden="true" /><span className="nav-label">{name}</span>{page === id && <span className="nav-active-dot" aria-hidden="true" />}</button>)}</nav>
+            onClick={() => navigate(id)}><Icon size={19} aria-hidden="true" /><span className="nav-label">{name}</span></button>)}
+          <SelectionIndicator owner={nav} selection={page} selector="[aria-current='page']" className="nav-selection-indicator" axis="vertical" />
+        </nav>
         <div className="sidebar-footer">
           <div className="sidebar-note" title={sidebarCollapsed ? 'Dados salvos neste dispositivo' : undefined}><HardDrive size={17} aria-hidden="true" /><p>Tudo que você registra fica neste dispositivo.</p></div>
           <button type="button" className="sidebar-toggle" aria-controls="area-navigation" aria-expanded={!sidebarCollapsed}
@@ -89,10 +92,10 @@ export function MainDashboard() {
         </PageTransition>
       </main>
     </div>
-    {searchOpen && <Dialog title="Por onde vamos começar?" description="Encontre uma área para cuidar da sua rotina." onClose={() => setSearchOpen(false)}>
+    <Dialog open={searchOpen} title="Por onde vamos começar?" description="Encontre uma área para cuidar da sua rotina." onClose={() => setSearchOpen(false)}>
       <label htmlFor="command-search" className="sr-only">Buscar área ou ação</label><input id="command-search" className="field" placeholder="Tarefas, foco, finanças, aparência…" value={query} onChange={e => setQuery(e.target.value)} />
       <div className="command-list">{commands.map(({ id, name, detail, Icon }) => <button key={id} type="button" className="command-item" onClick={() => { setSearchOpen(false); navigate(id); }}><Icon size={21} /><span><strong>{name}</strong><small>{detail}</small></span><ArrowRight size={17} /></button>)}
         {!commands.length && <p className="empty-state">Nenhuma área encontrada. Tente “foco” ou “finanças”.</p>}</div>
-    </Dialog>}
+    </Dialog>
   </div>;
 }

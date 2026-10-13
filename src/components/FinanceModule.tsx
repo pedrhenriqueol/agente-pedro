@@ -313,7 +313,7 @@ export function FinanceModule() {
         </section>
       </div>
 
-      {isNewTransactionModalOpen && <Dialog title="Nova movimentação" description="Registre uma entrada ou uma saída que aconteceu em uma das suas contas." onClose={() => { if (!transactionPending) { setModalOpen(false); clearError(); } }}>
+      <Dialog open={isNewTransactionModalOpen} title="Nova movimentação" description="Registre uma entrada ou uma saída que aconteceu em uma das suas contas." onClose={() => { if (!transactionPending) { setModalOpen(false); clearError(); } }}>
         <form className="finance-form" onSubmit={createTransaction} noValidate>
           <fieldset className="finance-type-picker" disabled={transactionPending}><legend className="label">Tipo de movimentação</legend><div>{(['expense', 'income'] as const).map((option) => <label key={option} className={type === option ? 'is-selected' : ''}><input type="radio" name="transaction-type" checked={type === option} onChange={() => setType(option)} />{option === 'expense' ? <ArrowUpRight size={17} /> : <ArrowDownLeft size={17} />}{option === 'expense' ? 'Saída' : 'Entrada'}</label>)}</div></fieldset>
           <div><label className="label" htmlFor="finance-description">O que foi?</label><input id="finance-description" className="field" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Mercado, salário, internet…" maxLength={160} disabled={transactionPending} required /></div>
@@ -323,9 +323,9 @@ export function FinanceModule() {
           {transactionError && <p ref={transactionErrorRef} className="notice error" role="alert" tabIndex={-1}>{transactionError}</p>}
           <div className="finance-form-actions"><button type="button" className="button secondary" onClick={() => { setModalOpen(false); clearError(); }} disabled={transactionPending}>Cancelar</button><button className="button primary" type="submit" disabled={transactionPending || !accounts.length}>{transactionPending ? 'Salvando…' : 'Salvar movimentação'}</button></div>
         </form>
-      </Dialog>}
+      </Dialog>
 
-      {isAccountOpen && <Dialog title="Adicionar conta" description="Dê um nome à conta e informe o saldo de hoje. Não é necessário conectar seu banco." onClose={() => { if (!accountPending) { setAccountOpen(false); clearError(); } }}>
+      <Dialog open={isAccountOpen} title="Adicionar conta" description="Dê um nome à conta e informe o saldo de hoje. Não é necessário conectar seu banco." onClose={() => { if (!accountPending) { setAccountOpen(false); clearError(); } }}>
         <form className="finance-form" onSubmit={createAccount} noValidate>
           <div><label className="label" htmlFor="finance-account-name">Nome da conta</label><input id="finance-account-name" className="field" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Meu banco, reserva, carteira…" maxLength={80} disabled={accountPending} required /></div>
           <div><label className="label" htmlFor="finance-account-type">Tipo de conta</label><select id="finance-account-type" className="field" value={accountType} onChange={(event) => setAccountType(event.target.value as AccountType)} disabled={accountPending}>{Object.entries(ACCOUNT_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
@@ -333,16 +333,16 @@ export function FinanceModule() {
           {accountError && <p ref={accountErrorRef} className="notice error" role="alert" tabIndex={-1}>{accountError}</p>}
           <div className="finance-form-actions"><button type="button" className="button secondary" onClick={() => { setAccountOpen(false); clearError(); }} disabled={accountPending}>Cancelar</button><button type="submit" className="button primary" disabled={accountPending}>{accountPending ? 'Criando…' : 'Criar conta'}</button></div>
         </form>
-      </Dialog>}
+      </Dialog>
 
-      {isBudgetOpen && <Dialog title="Definir limite mensal" description={`Escolha quanto pretende gastar nesta categoria em ${monthLabel}. Salvar novamente atualiza o limite existente.`} onClose={() => { if (!budgetPending) { setBudgetOpen(false); clearError(); } }}>
+      <Dialog open={isBudgetOpen} title="Definir limite mensal" description={`Escolha quanto pretende gastar nesta categoria em ${monthLabel}. Salvar novamente atualiza o limite existente.`} onClose={() => { if (!budgetPending) { setBudgetOpen(false); clearError(); } }}>
         <form className="finance-form" onSubmit={createBudget} noValidate>
           <div><label className="label" htmlFor="finance-budget-category">Categoria</label><select id="finance-budget-category" className="field" value={budgetCategory} onChange={(event) => setBudgetCategory(event.target.value)} disabled={budgetPending}>{(EXPENSE_CATEGORIES.includes(budgetCategory) ? EXPENSE_CATEGORIES : [...EXPENSE_CATEGORIES, budgetCategory]).map((item) => <option key={item}>{item}</option>)}</select></div>
           <div><label className="label" htmlFor="finance-budget-amount">Limite em reais</label><input id="finance-budget-amount" className="field" inputMode="decimal" value={budgetAmount} onChange={(event) => setBudgetAmount(event.target.value)} placeholder="800,00" maxLength={24} disabled={budgetPending} required /><p className="muted finance-field-hint">Só as saídas desta categoria e deste mês entram no acompanhamento.</p></div>
           {budgetError && <p ref={budgetErrorRef} className="notice error" role="alert" tabIndex={-1}>{budgetError}</p>}
           <div className="finance-form-actions"><button type="button" className="button secondary" onClick={() => { setBudgetOpen(false); clearError(); }} disabled={budgetPending}>Cancelar</button><button type="submit" className="button primary" disabled={budgetPending}>{budgetPending ? 'Salvando…' : 'Salvar limite'}</button></div>
         </form>
-      </Dialog>}
+      </Dialog>
     </section>
   );
 }

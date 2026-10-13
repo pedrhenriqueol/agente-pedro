@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Page } from '../../lib/desktop';
 
 const PageVisibilityContext = createContext(true);
@@ -6,7 +6,7 @@ const PageVisibilityContext = createContext(true);
 /** Portals belong to a page too: a hidden page must release its modal and focus trap. */
 export function usePageActive() { return useContext(PageVisibilityContext); }
 
-function useReducedMotion(preference: boolean) {
+export function useReducedMotion(preference: boolean) {
   const [system, setSystem] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   useEffect(() => {
     const query = matchMedia('(prefers-reduced-motion: reduce)');
@@ -17,7 +17,117 @@ function useReducedMotion(preference: boolean) {
   return preference || system;
 }
 
-interface TransitionState { current: Page; outgoing: Page | null; visited: Page[]; revision: number }
+interface TransitionState<T> { current: T; outgoing: T[]; visited: T[]; revision: number }
+interface RetainedTransitionProps<T extends string> {
+  value: T;
+  reduceMotion: boolean;
+  containerClassName: string;
+  sectionClassName: string;
+  slotAttribute: 'data-page' | 'data-section';
+  label?: (value: T) => string;
+  tabId?: (value: T) => string;
+  panelId?: (value: T) => string;
+  measureHeight?: boolean;
+  values?: readonly T[];
+  children: (value: T) => ReactNode;
+}
+
+/** Retain visited areas and reverse from the currently drawn values, including midway through entry. */
+export function RetainedTransition<T extends string>({ value, reduceMotion, containerClassName, sectionClassName,
+  slotAttribute, label, tabId, panelId, measureHeight = false, values = [], children }: RetainedTransitionProps<T>) {
+  const immediate = useReducedMotion(reduceMotion);
+  const parentActive = usePageActive();
+  const [state, setState] = useState<TransitionState<T>>(() => ({ current: value, outgoing: [], visited: [value], revision: 0 }));
+  const container = useRef<HTMLDivElement>(null);
+  const nodes = useRef(new Map<T, HTMLElement>());
+  const animations = useRef<Animation[]>([]);
+  const visible = useRef(new Set<T>([value]));
+  const sequence = useRef(0);
+  const restingHeight = useRef<number | null>(null);
+  if (state.current !== value) {
+    setState({ current: value, outgoing: immediate ? [] : [...new Set([...state.outgoing, state.current])].filter(id => id !== value),
+      visited: state.visited.includes(value) ? state.visited : [...state.visited, value], revision: state.revision + 1 });
+  }
+
+  useLayoutEffect(() => {
+    const epoch = ++sequence.current;
+    // Sample each visible layer exactly once before cancellation removes its animation effect.
+    const samples = new Map<T, { opacity: string; transform: string }>();
+    for (const id of [state.current, ...state.outgoing]) {
+      const node = nodes.current.get(id);
+      if (!node) continue;
+      if (visible.current.has(id)) {
+        const computed = getComputedStyle(node);
+        samples.set(id, { opacity: computed.opacity, transform: computed.transform });
+      } else samples.set(id, { opacity: '0', transform: 'translateY(4px)' });
+    }
+    const initialHeight = measureHeight ? animations.current.some(animation => animation.playState === 'running')
+      ? container.current?.getBoundingClientRect().height : restingHeight.current ?? container.current?.getBoundingClientRect().height : undefined;
+    animations.current.forEach(animation => animation.cancel());
+    animations.current = [];
+    visible.current = new Set([state.current, ...state.outgoing]);
+    const entering = state.outgoing.length > 0;
+    for (const id of [state.current, ...state.outgoing]) {
+      const node = nodes.current.get(id);
+      if (!node) continue;
+      const active = id === state.current;
+      const sample = samples.get(id)!;
+      node.style.opacity = active ? '1' : '0';
+      node.style.transform = active ? 'none' : 'translateY(-2px)';
+      if (!immediate && entering) {
+        animations.current.push(node.animate([sample, { opacity: active ? '1' : '0', transform: node.style.transform }],
+          { duration: active ? 180 : 100, easing: active ? 'cubic-bezier(.16,1,.3,1)' : 'ease-out' }));
+      }
+    }
+    if (measureHeight && container.current) {
+      const target = nodes.current.get(state.current)?.scrollHeight ?? initialHeight ?? 0;
+      container.current.style.height = entering && !immediate ? `${target}px` : 'auto';
+      if (entering && !immediate && initialHeight !== undefined && Math.abs(initialHeight - target) > 1) {
+        animations.current.push(container.current.animate([{ height: `${initialHeight}px` }, { height: `${target}px` }],
+          { duration: 200, easing: 'cubic-bezier(.16,1,.3,1)' }));
+      }
+    }
+    const finish = () => {
+      if (epoch !== sequence.current) return;
+      visible.current = new Set([state.current]);
+      if (container.current && measureHeight) container.current.style.height = 'auto';
+      if (measureHeight) restingHeight.current = nodes.current.get(state.current)?.scrollHeight ?? null;
+      if (state.outgoing.length) setState(current => current.revision === state.revision ? { ...current, outgoing: [] } : current);
+    };
+    if (!animations.current.length) finish();
+    else void Promise.allSettled(animations.current.map(animation => animation.finished)).then(finish);
+  }, [state.current, state.revision, immediate, measureHeight]);
+
+  useLayoutEffect(() => {
+    const node = nodes.current.get(state.current);
+    if (!measureHeight || !node) return;
+    const observer = new ResizeObserver(() => {
+      if (!animations.current.some(animation => animation.playState === 'running')) restingHeight.current = node.scrollHeight;
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [state.current, measureHeight]);
+
+  useEffect(() => () => { sequence.current++; animations.current.forEach(animation => animation.cancel()); }, []);
+
+  return <div ref={container} className={containerClassName} data-transitioning={Boolean(state.outgoing.length)}>
+    {values.filter(id => !state.visited.includes(id)).map(id => <section key={id} hidden role={tabId ? 'tabpanel' : undefined}
+      id={panelId?.(id)} aria-labelledby={tabId?.(id)} />)}
+    {state.visited.map(id => {
+      const active = id === state.current;
+      const leaving = state.outgoing.includes(id);
+      return <section key={id} ref={node => { if (node) nodes.current.set(id, node); else nodes.current.delete(id); }}
+        className={sectionClassName} {...{ [slotAttribute]: id }} data-presence={active ? 'active' : leaving ? 'leaving' : 'hidden'}
+        hidden={!active && !leaving} aria-label={label?.(id)} aria-hidden={!active || undefined} inert={!active || undefined}
+        role={tabId ? 'tabpanel' : undefined} tabIndex={tabId ? 0 : undefined} id={panelId?.(id)} aria-labelledby={tabId?.(id)}>
+        <PageVisibilityContext.Provider value={active && parentActive}>
+          <div className="page-content">{children(id)}</div>
+        </PageVisibilityContext.Provider>
+      </section>;
+    })}
+  </div>;
+}
+
 interface PageTransitionProps {
   page: Page;
   reduceMotion: boolean;
@@ -25,36 +135,7 @@ interface PageTransitionProps {
   children: (page: Page) => ReactNode;
 }
 
-/** Mount each area on its first visit and retain its forms and scroll position. */
 export function PageTransition({ page, reduceMotion, label, children }: PageTransitionProps) {
-  const immediate = useReducedMotion(reduceMotion);
-  const [state, setState] = useState<TransitionState>(() => ({ current: page, outgoing: null, visited: [page], revision: 0 }));
-  // Derive the presentation before committing a changed destination. An interrupted
-  // transition always leaves from the latest requested area, never an old timer.
-  if (state.current !== page) {
-    setState({ current: page, outgoing: immediate ? null : state.current,
-      visited: state.visited.includes(page) ? state.visited : [...state.visited, page], revision: state.revision + 1 });
-  } else if (immediate && state.outgoing) {
-    setState({ ...state, outgoing: null });
-  }
-  useEffect(() => {
-    if (!state.outgoing) return;
-    const revision = state.revision;
-    const timer = window.setTimeout(() => setState(current => current.revision === revision
-      ? { ...current, outgoing: null } : current), 220);
-    return () => window.clearTimeout(timer);
-  }, [state.outgoing, state.revision]);
-
-  return <div className="navigation-pages" data-transitioning={Boolean(state.outgoing)}>
-    {state.visited.map(id => {
-      const active = id === state.current;
-      const leaving = id === state.outgoing;
-      return <section key={id} className={`navigation-page${active && state.outgoing ? ' is-entering' : ''}${leaving ? ' is-leaving' : ''}`}
-        data-page={id} hidden={!active && !leaving} aria-label={label(id)} aria-hidden={!active || undefined} inert={!active || undefined}>
-        <PageVisibilityContext.Provider value={active}>
-          <div className="page-content">{children(id)}</div>
-        </PageVisibilityContext.Provider>
-      </section>;
-    })}
-  </div>;
+  return <RetainedTransition value={page} reduceMotion={reduceMotion} label={label} containerClassName="navigation-pages"
+    sectionClassName="navigation-page" slotAttribute="data-page">{children}</RetainedTransition>;
 }

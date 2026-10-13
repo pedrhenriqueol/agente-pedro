@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Moon, Sun, Monitor, Palette, RotateCcw, Clock3, Focus, Wallet, Minus, Eye, EyeOff, Sparkles, Navigation, Accessibility, ChevronDown, Music2, Pause, Play, PanelLeftClose, Layers } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
+import { RetainedTransition } from './ui/PageTransition';
+import { SelectionIndicator } from './ui/SelectionIndicator';
+import { AnimatedDisclosure } from './ui/AnimatedDisclosure';
+import '../styles/appearance-motion.css';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { useFocusStore } from '../stores/useFocusStore';
 import { formatCentsToBRL, useFinanceStore } from '../stores/useFinanceStore';
@@ -40,6 +44,7 @@ export function AppearancePage() {
   const [time, setTime] = useState(() => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
   const [failedArtwork, setFailedArtwork] = useState<string | null>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const tabStrip = useRef<HTMLDivElement>(null);
   const hybrid = p.islandVisibility === 'hybrid';
   const active = focus.pomodoroState === 'focus' || focus.pomodoroState === 'break';
   const focusPresent = active || focus.pomodoroState === 'paused' || focus.sessionSaveState === 'saving' || focus.sessionSaveState === 'error';
@@ -78,16 +83,19 @@ export function AppearancePage() {
 
   return <div className="settings-page">
     <header className="page-heading"><span className="eyebrow">Seu espaço, do seu jeito</span><h1>Aparência</h1><p>Uma presença discreta, no ritmo da sua rotina.</p></header>
-    <div className="settings-tabs" role="tablist" aria-label="Preferências do Pedro">
+    <div ref={tabStrip} className="settings-tabs" role="tablist" aria-label="Preferências do Pedro">
       {sections.map(({ id, label, Icon }, index) => <button key={id} ref={node => { tabRefs.current[index] = node; }} type="button" role="tab"
         id={`settings-tab-${id}`} aria-selected={section === id} aria-controls={`settings-section-${id}`} tabIndex={section === id ? 0 : -1}
         onClick={() => setSection(id)} onKeyDown={event => moveTab(event, index)}><Icon size={16} aria-hidden="true" /><span>{label}</span></button>)}
+      <SelectionIndicator owner={tabStrip} selection={section} selector="[aria-selected='true']" className="settings-selection-indicator" />
     </div>
     <div className="settings-grid">
       <div className="settings-sections">
-        {sections.filter(item => item.id !== section).map(item => <div key={item.id} id={`settings-section-${item.id}`} role="tabpanel" aria-labelledby={`settings-tab-${item.id}`} hidden />)}
-        <div className="settings-section-content" role="tabpanel" tabIndex={0} id={`settings-section-${section}`} aria-labelledby={`settings-tab-${section}`} key={section}>
-          {section === 'island' && <section className="panel">
+        <RetainedTransition value={section} reduceMotion={p.reduceMotion} containerClassName="settings-category-presence"
+          sectionClassName="settings-section-content" slotAttribute="data-section" measureHeight
+          values={sections.map(item => item.id)} tabId={id => `settings-tab-${id}`} panelId={id => `settings-section-${id}`}>
+          {category => <>
+          {category === 'island' && <section className="panel">
             <div className="panel-heading"><div><h2>Seu espaço no desktop</h2><p className="muted">A ilha acompanha sua atividade sem ocupar mais do que precisa.</p></div><Sparkles size={20} className="muted" aria-hidden="true" /></div>
             <fieldset className="settings-fieldset" aria-describedby={hybrid ? 'island-visibility-help' : undefined}><legend className="label">Visibilidade</legend><div className="idle-choices">{visibilityOptions.map(({ value, label, detail, Icon }) =>
               <label className={'idle-choice ' + (p.islandVisibility === value ? 'selected' : '')} key={value}><input type="radio" name="island-visibility" value={value} checked={p.islandVisibility === value}
@@ -102,27 +110,27 @@ export function AppearancePage() {
               <label className={'idle-choice ' + (p.islandIdle === value ? 'selected' : '')} key={value}><input type="radio" name="island" value={value} checked={p.islandIdle === value}
                 onChange={() => p.updatePreferences({ islandIdle: value })} /><Icon size={19} aria-hidden="true" /><span><strong>{label}</strong><small>{detail}</small></span></label>)}</div></fieldset>
             <p className="settings-help">Durante uma sessão, o foco tem prioridade. A música aparece quando não há foco em andamento.</p>
-            <details className="settings-details"><summary>Acabamento da ilha<ChevronDown size={15} aria-hidden="true" /></summary><div>
+            <AnimatedDisclosure title="Acabamento da ilha" reduceMotion={p.reduceMotion}>
               <label className="slider-label" htmlFor="island-opacity"><span>Opacidade da superfície</span><output>{Math.round(p.islandOpacity * 100)}%</output></label>
               <input id="island-opacity" className="range-input" type="range" min="55" max="100" value={Math.round(p.islandOpacity * 100)} onChange={event => p.updatePreferences({ islandOpacity: Number(event.target.value) / 100 })} />
               <p className="settings-help">Textos e controles mantêm seu contraste enquanto a superfície muda.</p>
-            </div></details>
+            </AnimatedDisclosure>
           </section>}
 
-          {section === 'navigation' && <section className="panel">
+          {category === 'navigation' && <section className="panel">
             <div className="panel-heading"><div><h2>Menos atalhos, mais espaço</h2><p className="muted">As áreas ficam reunidas no menu da ilha e no painel.</p></div><Navigation size={20} className="muted" aria-hidden="true" /></div>
             <div className="settings-shortcut"><span>Encontre uma área no painel</span><kbd>Ctrl + K</kbd></div>
             <div className="preference-row settings-preference"><div><h2>Recolher navegação do painel</h2><p className="muted">Mantenha os ícones à mão e dê mais espaço ao conteúdo.</p></div>
               <label className="switch"><input type="checkbox" aria-label="Recolher navegação do painel" checked={p.sidebarCollapsed} onChange={event => p.updatePreferences({ sidebarCollapsed: event.target.checked })} /><span /></label></div>
             <div className="preference-row settings-preference"><div><h2>Dock de atalhos</h2><p className="muted">Acesso permanente às áreas no desktop, quando você preferir.</p></div>
               <label className="switch"><input type="checkbox" aria-label="Mostrar dock no desktop" checked={p.dockEnabled} onChange={event => p.updatePreferences({ dockEnabled: event.target.checked })} /><span /></label></div>
-            {p.dockEnabled && <details className="settings-details"><summary>Acabamento do dock<ChevronDown size={15} aria-hidden="true" /></summary><div>
+            {p.dockEnabled && <AnimatedDisclosure title="Acabamento do dock" reduceMotion={p.reduceMotion}>
               <label className="slider-label" htmlFor="dock-opacity"><span>Opacidade do dock</span><output>{Math.round(p.dockOpacity * 100)}%</output></label>
               <input id="dock-opacity" className="range-input" type="range" min="55" max="100" value={Math.round(p.dockOpacity * 100)} onChange={event => p.updatePreferences({ dockOpacity: Number(event.target.value) / 100 })} />
-            </div></details>}
+            </AnimatedDisclosure>}
           </section>}
 
-          {section === 'appearance' && <section className="panel">
+          {category === 'appearance' && <section className="panel">
             <div className="panel-heading"><div><h2>Cor e superfície</h2><p className="muted">Conforto visual para cada momento do dia.</p></div><Palette size={20} className="muted" aria-hidden="true" /></div>
             <fieldset className="settings-fieldset"><legend className="label">Tema do aplicativo</legend><div className="choice-row">{themeOptions.map(({ value, label, Icon }) =>
               <label className={'choice ' + (p.theme === value ? 'selected' : '')} key={value}><input type="radio" name="theme" value={value} checked={p.theme === value}
@@ -130,7 +138,7 @@ export function AppearancePage() {
             <fieldset className="settings-fieldset"><legend className="label">Cor de destaque</legend><div className="accent-choices">{([{ value: 'mint', label: 'Verde', color: '#3fc8a5' }, { value: 'violet', label: 'Violeta', color: '#a78bfa' }, { value: 'blue', label: 'Azul', color: '#66aaff' }] as const).map(option =>
               <label className={'accent-choice ' + (p.accent === option.value ? 'selected' : '')} key={option.value}><input type="radio" name="accent" value={option.value} checked={p.accent === option.value}
                 onChange={() => p.updatePreferences({ accent: option.value })} /><span style={{ background: option.color }} /><span>{option.label}</span></label>)}</div></fieldset>
-            <details className="settings-details"><summary>Material do painel<ChevronDown size={15} aria-hidden="true" /></summary><div>
+            <AnimatedDisclosure title="Material do painel" reduceMotion={p.reduceMotion}>
               <fieldset className="settings-fieldset"><legend className="label">Superfície do painel</legend><div className="idle-choices">{([
                 { value: 'system', label: 'Sistema', detail: 'Integração suave com o desktop.', Icon: Layers },
                 { value: 'solid', label: 'Sólida', detail: 'Leitura consistente e menos efeitos.', Icon: Monitor },
@@ -138,17 +146,18 @@ export function AppearancePage() {
                 <input type="radio" name="native-material" value={value} checked={p.nativeMaterial === value} onChange={() => p.updatePreferences({ nativeMaterial: value })} />
                 <Icon size={18} aria-hidden="true" /><span><strong>{label}</strong><small>{detail}</small></span></label>)}</div></fieldset>
               <p className="settings-help">O material do sistema se aplica ao painel no Windows 11 compatível. Em outros sistemas, o painel mantém uma superfície sólida.</p>
-            </div></details>
+            </AnimatedDisclosure>
           </section>}
 
-          {section === 'accessibility' && <section className="panel">
+          {category === 'accessibility' && <section className="panel">
             <div className="panel-heading"><div><h2>No seu ritmo</h2><p className="muted">As mesmas ações, com menos movimento.</p></div><Accessibility size={20} className="muted" aria-hidden="true" /></div>
             <div className="preference-row"><div><h2>Reduzir animações</h2><p className="muted">Trocas diretas, sem deslocamentos ou efeitos prolongados.</p></div>
               <label className="switch"><input type="checkbox" aria-label="Reduzir animações" checked={p.reduceMotion} onChange={event => p.updatePreferences({ reduceMotion: event.target.checked })} /><span /></label></div>
             <p className="settings-help">A preferência de movimento reduzido do Windows também é respeitada.</p>
             <div className="settings-keyboard-help"><PanelLeftClose size={18} aria-hidden="true" /><p>Use Tab para navegar, Enter para ativar e Escape para fechar menus. Nas categorias acima, use as setas para alternar.</p></div>
           </section>}
-        </div>
+          </>}
+        </RetainedTransition>
       </div>
 
       <aside className="settings-preview" aria-label="Prévia das preferências"><div className="panel">

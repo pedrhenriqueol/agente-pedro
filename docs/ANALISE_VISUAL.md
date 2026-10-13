@@ -151,6 +151,8 @@ Para o Pedro, não recomendo ocultar a taskbar do Explorer, procurar suas janela
 
 ## Fontes técnicas
 
+O refinamento de cliques e transições foi implementado após nova análise por quadro do vídeo atualizado. As decisões, tempos reais do Pedro, evidências e roteiro de revisão estão em [DESIGN_REPORT_MOTION.md](DESIGN_REPORT_MOTION.md). Essa etapa inclui saída de diálogos, opções avançadas reversíveis, categorias preservadas e sobreposição visual controlada entre menus da ilha.
+
 - [Taskbar Extensions](https://learn.microsoft.com/en-us/windows/win32/shell/taskbar-extensions)
 - [ITaskbarList3](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-itaskbarlist3)
 - [Application Desktop Toolbars](https://learn.microsoft.com/en-us/windows/win32/shell/application-desktop-toolbars)

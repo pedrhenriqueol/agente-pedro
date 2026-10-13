@@ -41,8 +41,7 @@
 .app-shell .navigation-page { grid-area: 1 / 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 34px clamp(22px, 3vw, 48px) 42px; scrollbar-gutter: stable; }
 .app-shell .navigation-page[hidden] { display: none; }
 .app-shell .navigation-page > .page-content { animation: none; }
-.app-shell .navigation-page.is-leaving { pointer-events: none; animation: pedro-page-exit 110ms ease-in both; }
-.app-shell .navigation-page.is-entering { animation: pedro-page-enter 180ms cubic-bezier(.22, 1, .36, 1) 40ms both; }
+.app-shell .navigation-page[data-presence='leaving'] { pointer-events: none; }
 @keyframes pedro-page-exit { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-3px); } }
 @keyframes pedro-page-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @media (min-width: 641px) and (max-width: 900px) {
@@ -66,3 +65,23 @@
   .app-shell .navigation-page { animation: none !important; }
 }
 :root[data-reduced-motion='true'] .app-shell .navigation-page { animation: none !important; }
+
+.app-shell .sidebar nav { position: relative; }
+.nav-selection-indicator { position: absolute; left: 0; top: 0; width: 3px; height: 16px; border-radius: 3px; background: var(--accent); pointer-events: none; opacity: 0; }
+.nav-selection-indicator[data-ready='true'] { opacity: 1; transition: transform 180ms cubic-bezier(.16,1,.3,1); }
+@media (min-width: 641px) {
+  .app-shell .sidebar .nav-item { transition: padding 220ms cubic-bezier(.16,1,.3,1), gap 220ms cubic-bezier(.16,1,.3,1), background 140ms, color 140ms; }
+  .app-shell .nav-label, .app-shell .sidebar-brand-copy, .app-shell .sidebar-toggle > span, .app-shell .sidebar-search > span, .app-shell .sidebar-search > kbd { transition: opacity 80ms ease; }
+  .app-shell.has-collapsed-sidebar .nav-label, .app-shell.has-collapsed-sidebar .sidebar-brand-copy,
+  .app-shell.has-collapsed-sidebar .sidebar-toggle > span, .app-shell.has-collapsed-sidebar .sidebar-search > span,
+  .app-shell.has-collapsed-sidebar .sidebar-search > kbd { display: block; opacity: 0; pointer-events: none; }
+  .app-shell.has-collapsed-sidebar .sidebar .nav-item { justify-content: flex-start; padding-left: 15px; padding-right: 0; }
+  .app-shell .sidebar-brand { overflow: hidden; transition: margin 220ms cubic-bezier(.16,1,.3,1), gap 220ms cubic-bezier(.16,1,.3,1); }
+  .app-shell.has-collapsed-sidebar .sidebar-brand { justify-content: flex-start; margin-inline: 8px; }
+  .app-shell.has-collapsed-sidebar .sidebar-toggle, .app-shell.has-collapsed-sidebar .sidebar-search { justify-content: flex-start; padding-left: 14px; padding-right: 0; }
+  .app-shell .sidebar-note { overflow: hidden; min-height: 70px; }
+  .app-shell .sidebar-note p { width: 144px; flex-shrink: 0; transition: opacity 80ms; }
+  .app-shell.has-collapsed-sidebar .sidebar-note { justify-content: flex-start; padding-left: 14px; }
+  .app-shell.has-collapsed-sidebar .sidebar-note p { display: block; opacity: 0; pointer-events: none; }
+}
+@media (max-width: 640px) { .nav-selection-indicator { display: none; } }

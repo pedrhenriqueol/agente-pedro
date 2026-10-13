@@ -13,8 +13,10 @@ import { requestPage, setDockVisible } from './lib/desktop';
 import { initializeMedia } from './stores/useMediaStore';
 import { initializeIslandVisibility, useIslandVisibilityStore } from './stores/useIslandVisibilityStore';
 import { applyPanelMaterial, configureDesktopMenu, initialDesktopPage, updateFocusProgress } from './services/nativeDesktop';
+import { useControlFeedback } from './hooks/useControlFeedback';
 
 export default function App() {
+  useControlFeedback();
   const [label, setLabel] = useState<string | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [attempt, setAttempt] = useState(0);

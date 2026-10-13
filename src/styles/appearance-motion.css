@@ -1,0 +1,15 @@
+.settings-tabs { position: relative; }
+.settings-tabs > button { position: relative; z-index: 1; }
+.settings-tabs > button[aria-selected='true'] { background: transparent; }
+.settings-selection-indicator { position: absolute; left: 0; border-radius: 9px; background: var(--accent-soft); pointer-events: none; opacity: 0; }
+.settings-selection-indicator[data-ready='true'] { opacity: 1; transition: transform 180ms cubic-bezier(.16,1,.3,1), width 180ms cubic-bezier(.16,1,.3,1); }
+.settings-category-presence { position: relative; display: grid; min-width: 0; overflow: clip; }
+.settings-category-presence > .settings-section-content { grid-area: 1/1; min-width: 0; animation: none; }
+.settings-category-presence > .settings-section-content[data-presence='leaving'] { pointer-events: none; }
+.settings-category-presence > .settings-section-content[hidden] { display: none; }
+.settings-category-presence .page-content { animation: none; }
+.settings-sections .settings-section-content .panel-heading p { font-size: 13px; line-height: 1.7; }
+.settings-details.is-animated-disclosure > .settings-disclosure-body { height: 0; opacity: 0; padding: 0; overflow: hidden; }
+.settings-disclosure-content { padding-top: 8px; }
+.settings-details.is-animated-disclosure[data-expanded='false'] > summary > svg { transform: rotate(0deg); }
+.settings-details.is-animated-disclosure[data-expanded='true'] > summary > svg { transform: rotate(180deg); }

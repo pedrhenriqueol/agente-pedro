@@ -45,6 +45,8 @@ export function DynamicIsland() {
   const confirmedResizeSequence = useRef(0);
   const body = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
+  const outgoing = useRef<HTMLDivElement>(null);
+  const outgoingAnimation = useRef<Animation | null>(null);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const expander = useRef<HTMLButtonElement>(null);
   const settingsFirst = useRef<HTMLButtonElement>(null);
@@ -78,6 +80,12 @@ export function DynamicIsland() {
   const requested = phase !== 'compact' && phase !== 'collapsing';
   const failure = error || visibilityError || visibility.error;
 
+  const clearOutgoing = useCallback(() => {
+    outgoingAnimation.current?.cancel();
+    outgoingAnimation.current = null;
+    outgoing.current?.replaceChildren();
+    if (outgoing.current) outgoing.current.hidden = true;
+  }, []);
   const cancelWork = useCallback(() => {
     epoch.current += 1;
     layoutRevision.current += 1;
@@ -85,8 +93,9 @@ export function DynamicIsland() {
     timers.current.forEach(clearTimeout);
     timers.current = [];
     pendingTransition.current = null;
+    clearOutgoing();
     return epoch.current;
-  }, []);
+  }, [clearOutgoing]);
   const schedule = useCallback((callback: () => void, delay: number, sequence: number) => {
     timers.current.push(setTimeout(() => { if (sequence === epoch.current) callback(); }, delay));
   }, []);
@@ -102,6 +111,7 @@ export function DynamicIsland() {
   }, []);
   const preserveNativeFrame = useCallback(() => {
     cancelWork();
+    if (body.current) { body.current.style.transition = ''; body.current.style.opacity = ''; body.current.style.transform = ''; }
     resizingBlocked.current = true;
     const expanded = nativeHeight.current > COMPACT_HEIGHT;
     requestedExpansion.current = expanded;
@@ -111,6 +121,71 @@ export function DynamicIsland() {
     setError('Não foi possível ajustar a ilha. Tente recolher novamente.');
   }, [cancelWork, resizeSurface]);
   const measure = useCallback(() => Math.min(MAX_HEIGHT, Math.max(HEADER_HEIGHT, Math.ceil((content.current?.scrollHeight || 0) + HEADER_HEIGHT + 16))), []);
+
+  // Freeze only pixels from the outgoing body. It has no React handlers, IDs or
+  // accessible controls; stores and the persistent header remain single owners.
+  function capturePresentation() {
+    if (reduceMotion) return null;
+    const fragment = document.createDocumentFragment();
+    const copy = (source: HTMLElement, opacity: string, transform: string, top = 0) => {
+      if (Number(opacity) < .01) return;
+      const clone = source.cloneNode(true) as HTMLElement;
+      const originals = [source, ...source.querySelectorAll<HTMLElement>('*')];
+      const clones = [clone, ...clone.querySelectorAll<HTMLElement>('*')];
+      clones.forEach(node => { node.removeAttribute('id'); node.removeAttribute('for'); node.removeAttribute('aria-controls'); });
+      for (const animation of source.getAnimations({ subtree: true })) {
+        const target = (animation.effect as KeyframeEffect | null)?.target;
+        const index = originals.indexOf(target as HTMLElement);
+        if (index < 0) continue;
+        const style = getComputedStyle(originals[index]);
+        clones[index].style.animation = 'none';
+        clones[index].style.opacity = style.opacity;
+        clones[index].style.transform = style.transform;
+      }
+      const layer = document.createElement('div');
+      Object.assign(layer.style, { position: 'absolute', left: '0', top: `${top}px`, width: `${source.offsetWidth}px`, opacity, transform });
+      layer.append(clone); fragment.append(layer);
+    };
+    if (outgoing.current && !outgoing.current.hidden) {
+      const style = getComputedStyle(outgoing.current);
+      const previous = document.createElement('div');
+      previous.style.position = 'relative';
+      previous.style.width = `${content.current?.offsetWidth || 350}px`;
+      previous.append(...[...outgoing.current.childNodes].map(node => node.cloneNode(true)));
+      const layer = document.createElement('div');
+      Object.assign(layer.style, { position: 'absolute', inset: '0', opacity: style.opacity, transform: style.transform });
+      layer.append(previous); fragment.append(layer);
+    }
+    if (body.current && content.current) {
+      const style = getComputedStyle(body.current);
+      copy(content.current, style.opacity, style.transform, -body.current.scrollTop);
+    }
+    return fragment.childNodes.length ? fragment : null;
+  }
+
+  function installPresentation(fragment: DocumentFragment | null) {
+    if (!outgoing.current || !fragment) return;
+    outgoing.current.replaceChildren(fragment);
+    outgoing.current.hidden = false;
+    outgoing.current.style.opacity = '1';
+    outgoing.current.style.transform = 'none';
+  }
+
+  const fadeOutgoing = useCallback((duration: number, sequence: number) => {
+    const node = outgoing.current;
+    if (!node || node.hidden) return;
+    const animation = node.animate([{ opacity: getComputedStyle(node).opacity, transform: 'translateY(0px)' },
+      { opacity: '0', transform: 'translateY(-3px)' }], { duration, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'forwards' });
+    outgoingAnimation.current = animation;
+    void animation.finished.then(() => { if (sequence === epoch.current) clearOutgoing(); }).catch(() => {});
+  }, [clearOutgoing]);
+
+  function prepareBody() {
+    if (!body.current) return;
+    body.current.style.transition = 'none';
+    body.current.style.opacity = '0';
+    body.current.style.transform = 'translateY(4px) scale(.995)';
+  }
 
   useEffect(() => {
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -134,7 +209,10 @@ export function DynamicIsland() {
   function beginOpen(nextView: IslandView, nextActivity = defaultActivity) {
     if (!visibility.visible) return;
     notifyActivity();
+    const presentation = capturePresentation();
     const sequence = cancelWork();
+    installPresentation(presentation);
+    prepareBody();
     requestedExpansion.current = true;
     setError('');
     setMenuIndex(0);
@@ -148,28 +226,30 @@ export function DynamicIsland() {
 
   function switchView(nextView: IslandView, nextActivity = activity) {
     if (!requestedExpansion.current || height.current === COMPACT_HEIGHT) { beginOpen(nextView, nextActivity); return; }
+    const presentation = capturePresentation();
     const sequence = cancelWork();
+    installPresentation(presentation);
+    prepareBody();
     notifyActivity();
     focusActivityControl.current = nextView === 'activity';
     setBodyVisible(false);
-    setPhase('switching');
-    schedule(() => {
-      pendingTransition.current = { epoch: sequence, view: nextView, kind: 'switch' };
-      setActivity(nextActivity);
-      setView(nextView);
-      // A repeated destination still gets a layout pass after its exit.
-      setPhase('preparing');
-    }, reduceMotion ? 0 : 60, sequence);
+    pendingTransition.current = { epoch: sequence, view: nextView, kind: 'switch' };
+    setActivity(nextActivity);
+    setView(nextView);
+    setPhase('preparing');
   }
 
   function closeIsland(restore = false) {
+    const presentation = capturePresentation();
     const sequence = cancelWork();
+    installPresentation(presentation);
+    fadeOutgoing(reduceMotion ? 0 : 80, sequence);
     const openHeight = height.current;
     requestedExpansion.current = false;
     setBodyVisible(false);
     setPhase('collapsing');
     if (restore && visibility.visible) (restoreTrigger.current === 'menu' ? menuTrigger : expander).current?.focus({ preventScroll: true });
-    schedule(() => resizeSurface(COMPACT_HEIGHT), reduceMotion || openHeight === COMPACT_HEIGHT ? 0 : 70, sequence);
+    schedule(() => resizeSurface(COMPACT_HEIGHT), reduceMotion || openHeight === COMPACT_HEIGHT ? 0 : 90, sequence);
     schedule(() => {
       void resizeNative(false).then(() => {
         if (sequence === epoch.current) setPhase('compact');
@@ -178,12 +258,13 @@ export function DynamicIsland() {
         // Keep the still-large native frame occupied by a usable, retryable UI.
         requestedExpansion.current = true;
         resizingBlocked.current = true;
+        if (body.current) { body.current.style.transition = ''; body.current.style.opacity = ''; body.current.style.transform = ''; }
         resizeSurface(nativeHeight.current);
         setBodyVisible(true);
         setPhase('expanded');
         setError('Não foi possível recolher a ilha. Tente novamente.');
       });
-    }, reduceMotion || openHeight === COMPACT_HEIGHT ? 0 : 240, sequence);
+    }, reduceMotion || openHeight === COMPACT_HEIGHT ? 0 : 270, sequence);
   }
 
   function toggleExpansion() {
@@ -232,7 +313,18 @@ export function DynamicIsland() {
         nextHeight = currentHeight;
         resizeSurface(nextHeight);
         setPhase(transition.kind === 'open' ? 'expanding' : 'switching');
-        schedule(() => setBodyVisible(true), reduceMotion ? 0 : transition.kind === 'open' ? 70 : 30, sequence);
+        const enter = () => {
+          if (body.current) {
+            void body.current.offsetHeight;
+            body.current.style.transition = '';
+            body.current.style.opacity = '';
+            body.current.style.transform = '';
+          }
+          setBodyVisible(true);
+          fadeOutgoing(reduceMotion ? 0 : 110, sequence);
+        };
+        if (reduceMotion) enter();
+        else schedule(enter, transition.kind === 'open' ? 50 : 10, sequence);
         schedule(() => {
           setPhase('expanded');
           if (layout === layoutRevision.current && requestedExpansion.current && height.current === nextHeight) {
@@ -240,11 +332,13 @@ export function DynamicIsland() {
               if (sequence === epoch.current && layout === layoutRevision.current && requestedExpansion.current) preserveNativeFrame();
             });
           }
-        }, reduceMotion ? 0 : transition.kind === 'open' ? 240 : 180, sequence);
+        }, reduceMotion ? 0 : transition.kind === 'open' ? 250 : 220, sequence);
       } catch {
         if (sequence !== epoch.current) return;
         requestedExpansion.current = false;
         setError('Não foi possível expandir. Abra o menu para tentar novamente.');
+        clearOutgoing();
+        if (body.current) { body.current.style.transition = ''; body.current.style.opacity = ''; body.current.style.transform = ''; }
         // A failed larger view may leave the previous native frame expanded.
         // Keep that frame occupied until a compact resize actually succeeds.
         if (preparedHeight > COMPACT_HEIGHT) {
@@ -275,7 +369,7 @@ export function DynamicIsland() {
         }
       }
     })();
-  }, [phase, view, activity, reduceMotion, measure, resizeSurface, resizeNative, preserveNativeFrame, schedule]);
+  }, [phase, view, activity, reduceMotion, measure, resizeSurface, resizeNative, preserveNativeFrame, schedule, fadeOutgoing, clearOutgoing]);
 
   useLayoutEffect(() => {
     if (phase !== 'expanded' || !content.current) return;
@@ -406,6 +500,7 @@ export function DynamicIsland() {
         {failure && <div className="island-error" role="alert"><span>{failure}</span><button type="button" onClick={() => { setError(''); closeIsland(); }} aria-label="Tentar recolher ilha novamente"><RefreshCw size={13} /></button></div>}
         </div>
       </div>
+      <div ref={outgoing} className="island-outgoing-layer" hidden aria-hidden="true" inert />
       {!bodyVisible && failure && <span className="island-sr-status" role="status">{failure}</span>}
     </section>
   </div>;
