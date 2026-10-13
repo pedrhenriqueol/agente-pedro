@@ -32,7 +32,7 @@
         "width": 1280,
         "height": 820,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "resizable": true,
         "visible": false,
         "center": true,
@@ -50,7 +50,7 @@
         "alwaysOnTop": true,
         "resizable": false,
         "shadow": false,
-        "visible": true,
+        "visible": false,
         "focus": false,
         "skipTaskbar": true,
         "url": "index.html?window=dock"

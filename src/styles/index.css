@@ -5,9 +5,9 @@
 :root {
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
   color-scheme: dark;
-  --bg: #101514; --surface: #181e1c; --raised: #202825; --line: #303a35;
-  --text: #f0f2ec; --muted: #a0ada6; --accent: #72d5b4; --accent-soft: #72d5b416;
-  --danger: #ff9292; --warning: #e9c78b; --accent-industrial: var(--accent);
+  --bg: #05070a; --surface: #0c0e14; --raised: #121620; --line: #1e2633;
+  --text: #f8fafc; --muted: #94a3b8; --accent: #10b981; --accent-soft: #10b98118;
+  --danger: #ef4444; --warning: #f59e0b; --accent-industrial: var(--accent);
   --text-primary: var(--text); --text-muted: var(--muted);
 }
 :root[data-theme='light'] {
@@ -79,6 +79,11 @@ kbd { font: inherit; font-size: 10px; border: 1px solid var(--line); border-radi
 .window-controls button:last-child:hover { background: #a02a37; color: #fff; }
 .app-layout { display: flex; flex: 1; min-height: 0; }
 .sidebar { width: 210px; flex-shrink: 0; padding: 28px 14px 18px; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); }
+/* Only expose the native backdrop after Windows confirms it was applied.
+   Cards and fields remain opaque so wallpaper never reduces their contrast. */
+:root[data-native-material='system'] .app-shell { background: color-mix(in srgb, var(--bg) 86%, transparent); }
+:root[data-native-material='system'] .titlebar,
+:root[data-native-material='system'] .sidebar { background: color-mix(in srgb, var(--surface) 90%, transparent); }
 .sidebar-brand { display: flex; align-items: center; gap: 12px; margin: 0 12px 38px; }
 .brand-mark { position: relative; display: inline-grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); border-radius: 13px; font-size: 28px; line-height: 1; font-weight: 700; padding-bottom: 4px; }
 .brand-mark > span { position: absolute; width: 4px; height: 4px; border-radius: 50%; bottom: 10px; right: 8px; background: var(--accent); }
@@ -168,6 +173,66 @@ kbd { font: inherit; font-size: 10px; border: 1px solid var(--line); border-radi
 .preview-mark { font-size: 24px; line-height: 1; color: var(--accent); }
 .settings-tip { display: flex; align-items: flex-start; gap: 10px; padding: 20px 0; margin-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
 .settings-tip svg { color: var(--accent); flex-shrink: 0; margin-top: 3px; }
+.settings-tabs { display: flex; gap: 5px; width: fit-content; max-width: 100%; padding: 5px; margin-bottom: 25px; border: 1px solid var(--line); background: var(--surface); border-radius: 13px; overflow-x: auto; }
+.settings-tabs > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; white-space: nowrap; border: 0; background: transparent; color: var(--muted); border-radius: 9px; font-size: 12px; transition: color 120ms ease, background 120ms ease; }
+.settings-tabs > button:hover { color: var(--text); background: var(--raised); }
+.settings-tabs > button[aria-selected='true'] { color: var(--accent); background: var(--accent-soft); }
+.settings-section-content { min-width: 0; animation: settings-section-in 180ms ease both; }
+.settings-section-content:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 18px; }
+.settings-sections .settings-section-content > .panel > .panel-heading p { font-size: 13px; line-height: 1.7; }
+.settings-details { margin-top: 25px; padding-top: 17px; border-top: 1px solid var(--line); }
+.settings-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 5px 0; list-style: none; color: var(--muted); cursor: pointer; font-size: 12px; }
+.settings-details > summary::-webkit-details-marker { display: none; }
+.settings-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.settings-details > summary:hover, .settings-details[open] > summary { color: var(--text); }
+.settings-details > summary > svg { transition: transform 140ms ease; }
+.settings-details[open] > summary > svg { transform: rotate(180deg); }
+.settings-details > div { padding-top: 8px; }
+.settings-details .settings-fieldset { margin-top: 13px; }
+.settings-details .slider-label { margin-top: 12px; }
+.settings-preference { padding: 23px 0; border-bottom: 1px solid var(--line); }
+.settings-preference:last-child { padding-bottom: 0; border-bottom: 0; }
+.settings-shortcut { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 14px 16px; background: var(--raised); border-radius: 11px; color: var(--muted); font-size: 12px; }
+.settings-shortcut > kbd { padding: 4px 8px; color: var(--text); font-family: inherit; font-size: 11px; border: 1px solid var(--line); border-radius: 6px; white-space: nowrap; }
+.settings-keyboard-help { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0 0; margin-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.8; }
+.settings-keyboard-help > svg { flex-shrink: 0; color: var(--accent); margin-top: 3px; }
+.settings-preview-switch { display: flex; gap: 3px; margin-top: -6px; margin-bottom: 18px; }
+.settings-preview-switch > button { flex: 1; background: transparent; border: 0; border-radius: 7px; color: var(--muted); font-size: 11px; padding: 7px 4px; transition: color 120ms ease, background 120ms ease; }
+.settings-preview-switch > button:hover { color: var(--text); background: var(--raised); }
+.settings-preview-switch > button[aria-pressed='true'] { color: var(--accent); background: var(--accent-soft); }
+.settings-preview-desktop { padding: 20px 10px 22px; border-radius: 16px; background: radial-gradient(ellipse at 85% 100%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 68%), var(--bg); border: 1px solid var(--line); min-height: 110px; }
+.settings-preview-island { display: flex; align-items: center; gap: 9px; background: color-mix(in srgb, var(--surface) calc(var(--settings-preview-opacity) * 100%), transparent); border: 1px solid var(--line); border-radius: 25px; min-height: 46px; padding: 9px 11px; box-shadow: 0 5px 16px #0002; color: var(--text); }
+.settings-preview-identity { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 10px; font-variant-numeric: tabular-nums; }
+.settings-preview-mark { display: grid; place-items: center; color: var(--accent); background: var(--accent-soft); width: 23px; height: 23px; border-radius: 8px; }
+.settings-preview-context { display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0; gap: 7px; font-size: 11px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.settings-preview-context > span:not(.settings-preview-artwork):not(.presence-dot) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.settings-preview-context .presence-dot { width: 5px; height: 5px; flex-shrink: 0; background: var(--muted); }
+.settings-preview-context .presence-dot.is-active { background: var(--accent); }
+.settings-preview-artwork { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px; color: var(--accent); background: var(--accent-soft); overflow: hidden; }
+.settings-preview-artwork img { width: 100%; height: 100%; object-fit: cover; }
+.settings-preview-artwork.is-large { width: 46px; height: 46px; border-radius: 10px; }
+.settings-preview-activity { margin: 10px 2px 0; padding: 13px; background: var(--raised); border: 1px solid var(--line); border-radius: 14px; }
+.settings-preview-caption { display: block; color: var(--muted); font-size: 10px; margin-bottom: 10px; }
+.settings-preview-focus { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.settings-preview-focus > strong { font-size: 29px; font-weight: 550; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.settings-preview-play { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--bg); }
+.settings-preview-activity > p { margin-top: 3px; color: var(--muted); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.settings-preview-progress { height: 3px; background: var(--line); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+.settings-preview-progress > span { display: block; height: 100%; background: var(--accent); transform-origin: left; }
+.settings-preview-track { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.settings-preview-track > div { min-width: 0; }
+.settings-preview-track strong { display: block; font-size: 12px; font-weight: 550; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.settings-preview-track p { color: var(--muted); font-size: 11px; line-height: 1.6; margin-top: 3px; }
+.settings-preview-dock { display: flex; justify-content: center; gap: 21px; width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px 17px; margin: 18px auto -4px; background: color-mix(in srgb, var(--surface) calc(var(--settings-preview-dock-opacity) * 100%), transparent); color: var(--muted); }
+.settings-preview-behavior { display: flex; align-items: flex-start; gap: 8px; margin: 17px 0 12px; color: var(--muted); }
+.settings-preview-behavior > .presence-dot { width: 5px; height: 5px; margin-top: 6px; flex-shrink: 0; }
+.settings-preview-behavior p { font-size: 11px; line-height: 1.6; }
+.settings-reset { margin-top: 17px; width: 100%; }
+@keyframes settings-section-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) { .settings-tabs { width: 100%; gap: 2px; padding: 4px; }.settings-tabs > button { flex: 1; padding: 10px 8px; gap: 5px; font-size: 11px; }.settings-tabs > button > svg { width: 14px; }.settings-tabs > button:last-child > span { font-size: 10px; }.settings-preview-desktop { padding-inline: 14px; } }
+:root[data-reduce-motion='true'] .settings-section-content { animation: none; }
+:root[data-reduce-motion='true'] .settings-tabs > button, :root[data-reduce-motion='true'] .settings-preview-switch > button, :root[data-reduce-motion='true'] .settings-details > summary > svg { transition: none; }
+@media (prefers-reduced-motion: reduce) { .settings-section-content { animation: none; }.settings-tabs > button, .settings-preview-switch > button, .settings-details > summary > svg { transition: none; } }
 .dialog-backdrop { position: fixed; inset: 0; z-index: 1000; background: #070a0bcc; display: flex; align-items: center; justify-content: center; padding: 24px; animation: dialog-in .18s ease; }
 .dialog { width: min(100%, 540px); max-height: calc(100dvh - 48px); background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 20px; display: flex; flex-direction: column; box-shadow: 0 30px 100px #0006; animation: dialog-in .2s ease; outline: none; }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }

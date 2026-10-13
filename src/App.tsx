@@ -12,12 +12,17 @@ import { initializePreferencesSync, usePreferencesStore } from './stores/usePref
 import { requestPage, setDockVisible } from './lib/desktop';
 import { initializeMedia } from './stores/useMediaStore';
 import { initializeIslandVisibility, useIslandVisibilityStore } from './stores/useIslandVisibilityStore';
+import { applyPanelMaterial, configureDesktopMenu, initialDesktopPage, updateFocusProgress } from './services/nativeDesktop';
 
 export default function App() {
   const [label, setLabel] = useState<string | null>(null);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [attempt, setAttempt] = useState(0);
   const preferences = usePreferencesStore();
+  const focusState = useFocusStore(state => state.pomodoroState);
+  const focusMode = useFocusStore(state => state.currentMode);
+  const remaining = useFocusStore(state => state.remainingSeconds);
+  const totalDuration = useFocusStore(state => state.totalDurationSeconds);
   const islandVisibility = useIslandVisibilityStore(state => state.snapshot);
   useEffect(() => {
     if (label !== 'island') return;
@@ -48,26 +53,51 @@ export default function App() {
   useEffect(() => {
     if (label !== 'main' || !('__TAURI_INTERNALS__' in window)) return;
     let cancelled = false; let cleanup: (() => void) | undefined;
+    let navigationGeneration = 0;
     // Listen while data is opening, so a dock click can choose the first screen.
-    void listen<string>('pedro:navigate', event => {
-      if (!['home', 'routine', 'finance', 'music', 'appearance'].includes(event.payload)) return;
-      const url = new URL(location.href); url.searchParams.set('page', event.payload);
+    const navigate = (page: string) => {
+      if (!['home', 'routine', 'finance', 'music', 'appearance'].includes(page)) return;
+      const url = new URL(location.href); url.searchParams.set('page', page);
       history.replaceState(null, '', url);
-      window.dispatchEvent(new CustomEvent('pedro:navigate', { detail: event.payload }));
-    }).then(unlisten => { if (cancelled) unlisten(); else cleanup = unlisten; }).catch(() => {});
+      window.dispatchEvent(new CustomEvent('pedro:navigate', { detail: page }));
+    };
+    void listen<string>('pedro:navigate', event => { navigationGeneration++; navigate(event.payload); }).then(async unlisten => {
+      if (cancelled) { unlisten(); return; }
+      cleanup = unlisten;
+      const generation = navigationGeneration;
+      const page = await initialDesktopPage();
+      if (page && !cancelled && generation === 0 && navigationGeneration === 0) navigate(page);
+    }).catch(() => {});
     return () => { cancelled = true; cleanup?.(); };
   }, [label]);
   useEffect(() => {
     const scheme = matchMedia('(prefers-color-scheme: dark)');
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
+    let cancelled = false;
+    let sequence = 0;
     const apply = () => {
-      document.documentElement.dataset.theme = preferences.theme === 'system' ? (scheme.matches ? 'dark' : 'light') : preferences.theme;
+      const theme = preferences.theme === 'system' ? (scheme.matches ? 'dark' : 'light') : preferences.theme;
+      document.documentElement.dataset.theme = theme;
       document.documentElement.dataset.accent = preferences.accent;
       document.documentElement.dataset.reducedMotion = String(preferences.reduceMotion || motion.matches);
+      if (label === 'main') {
+        const request = ++sequence;
+        void applyPanelMaterial(preferences.nativeMaterial, theme).then(result => {
+          if (!cancelled && request === sequence) document.documentElement.dataset.nativeMaterial = result.applied ? 'system' : 'solid';
+        }).catch(() => { if (!cancelled && request === sequence) document.documentElement.dataset.nativeMaterial = 'solid'; });
+      }
     };
     apply(); scheme.addEventListener('change', apply); motion.addEventListener('change', apply);
-    return () => { scheme.removeEventListener('change', apply); motion.removeEventListener('change', apply); };
-  }, [preferences.theme, preferences.accent, preferences.reduceMotion]);
+    return () => { cancelled = true; scheme.removeEventListener('change', apply); motion.removeEventListener('change', apply); };
+  }, [label, preferences.theme, preferences.accent, preferences.reduceMotion, preferences.nativeMaterial]);
+  useEffect(() => {
+    if (label === 'main') void configureDesktopMenu(preferences.islandVisibility, preferences.dockEnabled).catch(() => {});
+  }, [label, preferences.islandVisibility, preferences.dockEnabled]);
+  useEffect(() => {
+    if (label !== 'main') return;
+    const state = focusMode !== 'focus' ? 'none' : focusState === 'focus' ? 'running' : focusState === 'paused' ? 'paused' : 'none';
+    void updateFocusProgress(state, totalDuration - remaining, totalDuration).catch(() => {});
+  }, [label, focusMode, focusState, remaining, totalDuration]);
   useEffect(() => {
     if (!label) return;
     let cancelled = false; let disposeBridge: (() => void) | undefined; let disposePreferences: (() => void) | undefined;

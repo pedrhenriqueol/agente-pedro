@@ -26,9 +26,9 @@ export async function requestPage(page: DesktopPage): Promise<void> {
 }
 
 /** Native sizes include the transparent padding that contains the widget shadow. */
-export async function syncIslandSize(expanded: boolean): Promise<void> {
+export async function syncIslandSize(expanded: boolean, frameHeight = 284): Promise<void> {
   if (!isTauri()) return;
-  if (expanded) await invoke('expandir_ilha', { altura: 284 });
+  if (expanded) await invoke('expandir_ilha', { altura: Math.max(72, Math.min(424, frameHeight)) });
   else await invoke('recolher_ilha');
 }
 

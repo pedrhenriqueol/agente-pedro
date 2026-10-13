@@ -1,16 +1,19 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { usePageActive } from './PageTransition';
 
 interface DialogProps { title: string; description?: string; onClose: () => void; children: ReactNode; className?: string }
 
 export function Dialog({ title, description, onClose, children, className = '' }: DialogProps) {
+  const active = usePageActive();
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!active) return;
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     const siblings = [...document.body.children].filter((e): e is HTMLElement => e instanceof HTMLElement && e !== overlay.current)
@@ -38,7 +41,8 @@ export function Dialog({ title, description, onClose, children, className = '' }
       document.body.style.overflow = overflow;
       if (previous?.isConnected && !previous.closest('[inert]')) previous.focus({ preventScroll: true });
     };
-  }, []);
+  }, [active]);
+  if (!active) return null;
   return createPortal(
     <div ref={overlay} className="dialog-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} className={`dialog ${className}`} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}

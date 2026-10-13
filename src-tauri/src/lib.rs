@@ -4,11 +4,12 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod media;
 mod island_visibility;
+mod desktop_integration;
 
 // The native bounds include the 12 logical pixels used by each widget's shadow.
 const ISLAND_WIDTH: f64 = 404.0;
 const ISLAND_COMPACT_HEIGHT: f64 = 72.0;
-const ISLAND_EXPANDED_HEIGHT: f64 = 284.0;
+const ISLAND_EXPANDED_HEIGHT: f64 = 424.0;
 const DOCK_WIDTH: f64 = 450.0;
 const DOCK_HEIGHT: f64 = 88.0;
 
@@ -115,6 +116,20 @@ fn configurar_dock(app: AppHandle, visivel: bool) -> Result<(), String> {
         .ok_or_else(|| "O dock não está disponível.".to_string())?;
     if visivel {
         centralizar_dock_base(&app);
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::UI::WindowsAndMessaging::{IsWindowVisible, ShowWindow, SW_SHOWNOACTIVATE};
+            let handle = dock.hwnd().map_err(|error| error.to_string())?;
+            let hwnd = windows::Win32::Foundation::HWND(handle.0 as *mut _);
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                if !IsWindowVisible(hwnd).as_bool() {
+                    return Err("Não foi possível mostrar o dock.".into());
+                }
+            }
+            Ok(())
+        }
+        #[cfg(not(target_os = "windows"))]
         dock.show().map_err(|error| error.to_string())
     } else {
         dock.hide().map_err(|error| error.to_string())
@@ -122,7 +137,10 @@ fn configurar_dock(app: AppHandle, visivel: bool) -> Result<(), String> {
 }
 
 pub fn run() {
+    desktop_integration::prepare_process_identity();
     tauri::Builder::default()
+        .manage(desktop_integration::DesktopLaunchState::default())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| desktop_integration::handle_launch_args(app, &args)))
         .manage(media::MediaState::default())
         .manage(island_visibility::IslandVisibilityState::default())
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -151,9 +169,14 @@ pub fn run() {
             island_visibility::configure_island_visibility,
             island_visibility::island_activity,
             island_visibility::island_visibility_snapshot,
+            desktop_integration::configure_desktop_menu,
+            desktop_integration::apply_window_material,
+            desktop_integration::focus_taskbar_progress,
+            desktop_integration::desktop_initial_page,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            desktop_integration::init(&handle)?;
             media::start(&handle);
             centralizar_ilha_topo(&handle);
             island_visibility::start(&handle);

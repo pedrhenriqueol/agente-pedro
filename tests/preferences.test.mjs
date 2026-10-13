@@ -69,8 +69,52 @@ function environment({ native = false, persisted } = {}) {
         if (listener.event === 'pedro:preferences') listener.callback({ payload: { source, preferences } });
       }
     },
+    receiveNativePatch(patch) {
+      for (const listener of nativeListeners) {
+        if (listener.event === 'pedro:preferences-patch') listener.callback({ payload: patch });
+      }
+    },
   };
 }
+
+test('Novas preferências são discretas e a migração preserva um dock explicitamente escolhido', () => {
+  for (const persisted of [undefined, {}, { theme: 'light' }]) {
+    const env = environment({ persisted });
+    assert.equal(env.usePreferencesStore.getState().dockEnabled, false);
+    assert.equal(env.usePreferencesStore.getState().nativeMaterial, 'system');
+    assert.equal(env.usePreferencesStore.getState().sidebarCollapsed, false);
+  }
+  for (const dockEnabled of [true, false]) {
+    const env = environment({ persisted: { dockEnabled, islandVisibility: 'hybrid', islandHideDelay: 3, accent: 'violet' } });
+    env.usePreferencesStore.getState().updatePreferences({ nativeMaterial: 'solid', sidebarCollapsed: true });
+    const reopened = environment({ persisted: env.saved() }).usePreferencesStore.getState();
+    assert.equal(reopened.dockEnabled, dockEnabled);
+    assert.equal(reopened.nativeMaterial, 'solid');
+    assert.equal(reopened.sidebarCollapsed, true);
+    assert.equal(reopened.islandVisibility, 'hybrid');
+    assert.equal(reopened.islandHideDelay, 3);
+    assert.equal(reopened.accent, 'violet');
+  }
+});
+
+test('Hidratação aceita apenas dados conhecidos e mantém limites de contraste e opacidade', () => {
+  const env = environment({ persisted: {
+    nativeMaterial: 'glass', sidebarCollapsed: 'true', dockEnabled: 'true', reduceMotion: 'false',
+    islandOpacity: .01, dockOpacity: 2, unknownSetting: 'untrusted', updatePreferences: 'broken',
+  } });
+  const state = env.usePreferencesStore.getState();
+  assert.equal(state.nativeMaterial, 'system');
+  assert.equal(state.sidebarCollapsed, false);
+  assert.equal(state.dockEnabled, false);
+  assert.equal(state.reduceMotion, false);
+  assert.equal(state.islandOpacity, .55);
+  assert.equal(state.dockOpacity, 1);
+  assert.equal(typeof state.updatePreferences, 'function');
+  assert.equal(Object.hasOwn(state, 'unknownSetting'), false);
+  state.updatePreferences({ nativeMaterial: 'solid' });
+  assert.equal(Object.hasOwn(env.saved(), 'unknownSetting'), false);
+  assert.equal(Object.hasOwn(env.saved(), 'updatePreferences'), false);
+});
 
 test('Preferências antigas recebem ilha fixa e 3 segundos sem perder o tema e as opacidades', () => {
   const env = environment({ persisted: {
@@ -160,12 +204,58 @@ test('Evento nativo de outra janela sincroniza os novos campos sem eco e ignora 
     const received = { ...plain(env.DEFAULT_PREFERENCES), islandVisibility: 'hybrid', islandHideDelay: 10, accent: 'blue' };
     env.receiveNative(ownSource, received);
     assert.equal(env.usePreferencesStore.getState().islandHideDelay, 5);
+    for (const invalid of [null, undefined, [], 'hybrid']) env.receiveNative('malformed-window', invalid);
+    assert.equal(env.usePreferencesStore.getState().islandHideDelay, 5);
     env.receiveNative('another-window', received);
     assert.equal(env.usePreferencesStore.getState().islandVisibility, 'hybrid');
     assert.equal(env.usePreferencesStore.getState().islandHideDelay, 10);
     assert.equal(env.usePreferencesStore.getState().accent, 'blue');
     assert.equal(env.saved().islandHideDelay, 10);
     assert.equal(env.emitted.length, 1, 'Receber uma alteração não deve retransmiti-la');
+  } finally { close(); }
+});
+
+test('Menu nativo envia ajustes parciais validados sem apagar preferências ou publicar um eco', async () => {
+  const env = environment({ native: true, persisted: {
+    theme: 'light', accent: 'violet', dockEnabled: true, islandHideDelay: 10, nativeMaterial: 'solid', sidebarCollapsed: true,
+  } });
+  const close = await env.initializePreferencesSync();
+  try {
+    env.receiveNativePatch({ islandVisibility: 'hybrid' });
+    assert.equal(env.usePreferencesStore.getState().islandVisibility, 'hybrid');
+    assert.equal(env.saved().theme, 'light');
+    assert.equal(env.saved().accent, 'violet');
+    assert.equal(env.saved().dockEnabled, true);
+    assert.equal(env.saved().islandHideDelay, 10);
+    assert.equal(env.saved().nativeMaterial, 'solid');
+    assert.equal(env.saved().sidebarCollapsed, true);
+    env.receiveNativePatch({ nativeMaterial: 'system', sidebarCollapsed: false, dockEnabled: false, islandOpacity: .8 });
+    assert.equal(env.saved().nativeMaterial, 'system');
+    assert.equal(env.saved().sidebarCollapsed, false);
+    assert.equal(env.saved().dockEnabled, false);
+    assert.equal(env.saved().islandOpacity, .8);
+    assert.equal(env.emitted.length, 0);
+  } finally { close(); }
+  assert.equal(env.nativeListeners.size, 0);
+});
+
+test('Mensagens inválidas do menu não alteram valores nem substituem ações da store', async () => {
+  const env = environment({ native: true, persisted: { theme: 'light', islandVisibility: 'hybrid', islandHideDelay: 10 } });
+  const close = await env.initializePreferencesSync();
+  try {
+    const before = plain({ ...env.DEFAULT_PREFERENCES, theme: 'light', islandVisibility: 'hybrid', islandHideDelay: 10 });
+    const update = env.usePreferencesStore.getState().updatePreferences;
+    for (const patch of [null, [], 'hybrid', 1, {
+      theme: 'invalid', islandVisibility: 'hidden', islandHideDelay: 1, islandOpacity: NaN,
+      dockEnabled: 'true', sidebarCollapsed: null, nativeMaterial: 'acrylic', updatePreferences: null,
+      resetPreferences: 'broken', unexpected: true,
+    }]) env.receiveNativePatch(patch);
+    const state = env.usePreferencesStore.getState();
+    assert.equal(state.updatePreferences, update);
+    assert.equal(typeof state.resetPreferences, 'function');
+    for (const [key, value] of Object.entries(before)) assert.equal(state[key], value);
+    assert.equal(Object.hasOwn(state, 'unexpected'), false);
+    assert.equal(env.emitted.length, 0);
   } finally { close(); }
 });
 
@@ -179,6 +269,9 @@ test('Restaurar preferências volta à ilha fixa e 3 segundos no estado, armazen
   assert.equal(state.islandHideDelay, 3);
   assert.equal(state.theme, 'dark');
   assert.equal(state.islandOpacity, .96);
+  assert.equal(state.dockEnabled, false);
+  assert.equal(state.nativeMaterial, 'system');
+  assert.equal(state.sidebarCollapsed, false);
   assert.deepEqual(env.saved(), plain(env.DEFAULT_PREFERENCES));
   assert.deepEqual(env.emitted[0].payload.preferences, plain(env.DEFAULT_PREFERENCES));
 });
