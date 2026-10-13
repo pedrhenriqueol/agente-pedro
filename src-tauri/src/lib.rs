@@ -6,6 +6,7 @@ mod media;
 mod island_visibility;
 mod desktop_integration;
 mod diagnostics;
+mod dock_visibility;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -132,29 +133,8 @@ fn reposicionar_ilha(app: AppHandle) {
 }
 
 #[tauri::command]
-fn configurar_dock(app: AppHandle, visivel: bool) -> Result<(), String> {
-    let dock = app.get_webview_window("dock")
-        .ok_or_else(|| "O dock não está disponível.".to_string())?;
-    if visivel {
-        centralizar_dock_base(&app);
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::UI::WindowsAndMessaging::{IsWindowVisible, ShowWindow, SW_SHOWNOACTIVATE};
-            let handle = dock.hwnd().map_err(|error| error.to_string())?;
-            let hwnd = windows::Win32::Foundation::HWND(handle.0 as *mut _);
-            unsafe {
-                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-                if !IsWindowVisible(hwnd).as_bool() {
-                    return Err("Não foi possível mostrar o dock.".into());
-                }
-            }
-            Ok(())
-        }
-        #[cfg(not(target_os = "windows"))]
-        dock.show().map_err(|error| error.to_string())
-    } else {
-        dock.hide().map_err(|error| error.to_string())
-    }
+async fn configurar_dock(app: AppHandle, visivel: bool) -> Result<(), String> {
+    dock_visibility::request(&app, visivel).await
 }
 
 pub fn run() {
@@ -165,6 +145,7 @@ pub fn run() {
         .manage(desktop_integration::DesktopMenuState::default())
         .manage(desktop_integration::TaskbarState::default())
         .manage(desktop_integration::DesktopLaunchState::default())
+        .manage(dock_visibility::DockVisibilityState::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| desktop_integration::handle_launch_args(app, &args)))
         .manage(media::MediaState::default())
         .manage(island_visibility::IslandVisibilityState::default())
@@ -223,6 +204,7 @@ pub fn run() {
             diagnostics::write("visibility", "Iniciando visibilidade da ilha");
             island_visibility::start(&handle);
             centralizar_dock_base(&handle);
+            dock_visibility::start(&handle);
             if let Ok(shortcut) = Shortcut::from_str("Alt+Space") {
                 if let Err(error) = app.global_shortcut().register(shortcut) {
                     diagnostics::write("shortcut_warning", error.to_string());

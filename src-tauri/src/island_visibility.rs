@@ -22,12 +22,12 @@ pub enum VisibilityReason {
     Reveal,
 }
 
-const REVEAL_DWELL_MS: u64 = 600;
+const REVEAL_DWELL_MS: u64 = 120;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Observation {
     near_island: bool,
-    at_reveal_edge: bool,
+    in_reveal_region: bool,
     fullscreen: bool,
 }
 
@@ -38,8 +38,8 @@ struct VisibilityPolicy {
     visible: bool,
     reason: VisibilityReason,
     last_activity_ms: u64,
-    edge_armed: bool,
-    edge_entered_ms: Option<u64>,
+    reveal_armed: bool,
+    reveal_entered_ms: Option<u64>,
     fullscreen_reveal: bool,
 }
 
@@ -51,8 +51,8 @@ impl Default for VisibilityPolicy {
             visible: true,
             reason: VisibilityReason::Fixed,
             last_activity_ms: 0,
-            edge_armed: false,
-            edge_entered_ms: None,
+            reveal_armed: false,
+            reveal_entered_ms: None,
             fullscreen_reveal: false,
         }
     }
@@ -61,8 +61,8 @@ impl Default for VisibilityPolicy {
 impl VisibilityPolicy {
     fn configure(&mut self, mode: IslandVisibilityMode, delay_seconds: u32, now_ms: u64) {
         if self.mode != mode {
-            self.edge_entered_ms = None;
-            self.edge_armed = false;
+            self.reveal_entered_ms = None;
+            self.reveal_armed = false;
             self.fullscreen_reveal = false;
             self.last_activity_ms = now_ms;
             if mode == IslandVisibilityMode::Hybrid {
@@ -88,9 +88,9 @@ impl VisibilityPolicy {
         self.visible = false;
         self.reason = reason;
         self.fullscreen_reveal = false;
-        self.edge_entered_ms = None;
-        // A cursor already parked on the edge must leave before it can reveal.
-        self.edge_armed = !observation.at_reveal_edge;
+        self.reveal_entered_ms = None;
+        // A cursor already parked in the dormant region must leave before it can reveal.
+        self.reveal_armed = !observation.in_reveal_region;
     }
 
     fn tick(&mut self, observation: Observation, now_ms: u64) {
@@ -122,18 +122,18 @@ impl VisibilityPolicy {
             }
             return;
         }
-        if !observation.at_reveal_edge {
-            self.edge_armed = true;
-            self.edge_entered_ms = None;
-        } else if self.edge_armed {
-            let entered = *self.edge_entered_ms.get_or_insert(now_ms);
+        if !observation.in_reveal_region {
+            self.reveal_armed = true;
+            self.reveal_entered_ms = None;
+        } else if self.reveal_armed {
+            let entered = *self.reveal_entered_ms.get_or_insert(now_ms);
             if now_ms.saturating_sub(entered) >= REVEAL_DWELL_MS {
                 self.visible = true;
                 self.reason = VisibilityReason::Reveal;
                 self.last_activity_ms = now_ms;
                 self.fullscreen_reveal = observation.fullscreen;
-                self.edge_armed = false;
-                self.edge_entered_ms = None;
+                self.reveal_armed = false;
+                self.reveal_entered_ms = None;
             }
         }
     }
@@ -170,19 +170,19 @@ fn pointer_regions(window: Bounds, monitor: Bounds, scale: f64) -> (Bounds, Boun
         right: window.right.saturating_sub(inset),
         bottom: window.bottom.saturating_sub(inset),
     };
-    let center = (i64::from(window.left) + i64::from(window.right)) / 2;
-    let half_width = (90.0 * scale).round() as i32;
-    let edge = Bounds {
-        left: (center as i32).saturating_sub(half_width).max(monitor.left),
-        top: monitor.top,
-        right: (center as i32)
-            .saturating_add(half_width)
-            .min(monitor.right),
-        bottom: monitor
-            .top
-            .saturating_add((6.0 * scale).round().max(1.0) as i32),
+    // Observe the compact capsule's former position, including its proximity.
+    // This is global cursor observation, never an invisible input window. It
+    // follows work-area positioning (e.g. a top taskbar), not monitor.top alone.
+    // An expanded last rect must not create a tall reveal target over apps.
+    let proximity = (12.0 * scale).round() as i32;
+    let compact_height = (72.0 * scale).round() as i32;
+    let reveal = Bounds {
+        left: window.left.saturating_sub(proximity).max(monitor.left),
+        top: window.top.saturating_sub(proximity).max(monitor.top),
+        right: window.right.saturating_add(proximity).min(monitor.right),
+        bottom: window.top.saturating_add(compact_height).saturating_add(proximity).min(monitor.bottom),
     };
-    (near, edge)
+    (near, reveal)
 }
 
 fn foreground_covers_island(
@@ -484,12 +484,12 @@ mod platform {
                 return Err("O Windows não forneceu os limites do monitor da ilha.".into());
             }
             let scale = f64::from(GetDpiForWindow(island).max(96)) / 96.0;
-            let (near, edge) = pointer_regions(bounds(window_rect), bounds(info.rcMonitor), scale);
+            let (near, reveal) = pointer_regions(bounds(window_rect), bounds(info.rcMonitor), scale);
             let mut cursor = POINT::default();
             GetCursorPos(&mut cursor).map_err(|error| error.to_string())?;
             let mut observation = Observation {
                 near_island: near.contains(cursor.x, cursor.y),
-                at_reveal_edge: edge.contains(cursor.x, cursor.y),
+                in_reveal_region: reveal.contains(cursor.x, cursor.y),
                 fullscreen: false,
             };
             let foreground = GetForegroundWindow();
@@ -620,7 +620,7 @@ mod platform {
                             VisibilityErrorSource::Observation,
                         ),
                     }
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(80));
                 }
             })
         {
@@ -701,7 +701,7 @@ mod tests {
             Observation {
                 near_island: true,
                 fullscreen: true,
-                at_reveal_edge: false,
+                in_reveal_region: false,
             },
             200,
         );
@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn deliberate_edge_dwell_reveals_in_fullscreen_and_interaction_keeps_it_visible() {
+    fn hover_in_former_capsule_reveals_in_fullscreen_and_interaction_keeps_it_visible() {
         let mut policy = hybrid();
         policy.tick(
             Observation {
@@ -720,21 +720,21 @@ mod tests {
             200,
         );
         let edge = Observation {
-            at_reveal_edge: true,
+            in_reveal_region: true,
             fullscreen: true,
             near_island: false,
         };
         policy.tick(edge, 400);
-        policy.tick(edge, 999);
+        policy.tick(edge, 519);
         assert!(!policy.visible);
-        policy.tick(edge, 1_000);
+        policy.tick(edge, 520);
         assert!(policy.visible);
         assert_eq!(policy.reason, VisibilityReason::Reveal);
         policy.tick(
             Observation {
                 near_island: true,
                 fullscreen: true,
-                at_reveal_edge: false,
+                in_reveal_region: false,
             },
             4_000,
         );
@@ -761,7 +761,7 @@ mod tests {
     fn a_cursor_inherited_at_hide_cannot_immediately_reveal_without_leaving() {
         let mut policy = hybrid();
         let edge = Observation {
-            at_reveal_edge: true,
+            in_reveal_region: true,
             ..Default::default()
         };
         policy.tick(edge, 3_000);
@@ -769,24 +769,24 @@ mod tests {
         assert!(!policy.visible);
         policy.tick(Observation::default(), 10_200);
         policy.tick(edge, 10_400);
-        policy.tick(edge, 11_000);
+        policy.tick(edge, 10_520);
         assert!(policy.visible);
     }
 
     #[test]
-    fn briefly_crossing_the_reveal_edge_does_not_reveal() {
+    fn briefly_crossing_the_reveal_region_does_not_reveal() {
         let mut policy = hybrid();
         policy.tick(Observation::default(), 3_000);
         let edge = Observation {
-            at_reveal_edge: true,
+            in_reveal_region: true,
             ..Default::default()
         };
         policy.tick(edge, 3_200);
-        policy.tick(Observation::default(), 3_400);
+        policy.tick(Observation::default(), 3_280);
         policy.tick(edge, 3_600);
-        policy.tick(edge, 4_199);
+        policy.tick(edge, 3_719);
         assert!(!policy.visible);
-        policy.tick(edge, 4_200);
+        policy.tick(edge, 3_720);
         assert!(policy.visible);
     }
 
@@ -808,16 +808,56 @@ mod tests {
         assert_eq!(
             edge,
             Bounds {
-                left: -1415,
+                left: -1601,
                 top: -1440,
-                right: -1145,
-                bottom: -1431
+                right: -959,
+                bottom: -1311
             }
         );
         assert!(edge.contains(-1280, -1440));
-        assert!(!edge.contains(-1280, -1431));
+        assert!(edge.contains(-1280, -1390), "hover where the compact island appears");
+        assert!(!edge.contains(-1280, -1300), "expanded body is not a reveal target");
         assert!(near.contains(-1280, -1040));
         assert!(!near.contains(-1582, -1436));
+    }
+
+    #[test]
+    fn reveal_tracks_work_area_anchor_and_capsule_sides_at_each_dpi() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let monitor = Bounds { left: -3840, top: -2160, right: 0, bottom: 0 };
+            // Simulate a taskbar along the top; island is below its work area.
+            let left = -2400;
+            let top = monitor.top + (42.0_f64 * scale).round() as i32;
+            let island = Bounds {
+                left, top, right: left + (404.0_f64 * scale).round() as i32,
+                bottom: top + (424.0_f64 * scale).round() as i32,
+            };
+            let (_, reveal) = pointer_regions(island, monitor, scale);
+            assert!(reveal.contains(left + (20.0_f64 * scale).round() as i32, top + (28.0_f64 * scale).round() as i32));
+            assert!(reveal.contains(island.right - (20.0_f64 * scale).round() as i32, top + (28.0_f64 * scale).round() as i32));
+            assert!(!reveal.contains(left, monitor.top), "unrelated taskbar edge is not the capsule");
+            assert!(!reveal.contains(left + 50, top + (100.0_f64 * scale).round() as i32));
+        }
+    }
+
+    #[test]
+    fn returning_to_dormant_capsule_reveals_without_fixed_mode_or_keyboard() {
+        let mut policy = hybrid();
+        policy.tick(Observation::default(), 3_000);
+        let hover = Observation { near_island: true, in_reveal_region: true, fullscreen: false };
+        policy.tick(hover, 3_080);
+        policy.tick(hover, 3_199);
+        assert!(!policy.visible);
+        policy.tick(hover, 3_200);
+        assert!(policy.visible);
+        assert_eq!(policy.mode, IslandVisibilityMode::Hybrid);
+        assert_eq!(policy.reason, VisibilityReason::Reveal);
+        policy.tick(hover, 9_000);
+        assert!(policy.visible);
+        policy.tick(Observation::default(), 11_999);
+        assert!(policy.visible);
+        policy.tick(Observation::default(), 12_000);
+        assert!(!policy.visible);
     }
 
     #[test]

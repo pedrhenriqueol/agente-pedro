@@ -32,7 +32,46 @@ export async function syncIslandSize(expanded: boolean, frameHeight = 284): Prom
   else await invoke('recolher_ilha');
 }
 
-export async function setDockVisible(visible: boolean): Promise<void> {
-  if (!isTauri()) return;
-  await invoke('configurar_dock', { visivel: visible });
+interface DockVisibilityBatch {
+  visible: boolean;
+  waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>;
+}
+
+let pendingDockVisibility: DockVisibilityBatch | null = null;
+let updatingDockVisibility = false;
+
+/**
+ * One native update at a time per WebView. Changes received while IPC is in
+ * flight are coalesced to the latest preference, including rapid OFF/ON/OFF.
+ * Errors reach callers and never leave the queue permanently rejected.
+ */
+export function setDockVisible(visible: boolean): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    if (pendingDockVisibility) {
+      pendingDockVisibility.visible = visible;
+      pendingDockVisibility.waiters.push({ resolve, reject });
+    } else {
+      pendingDockVisibility = { visible, waiters: [{ resolve, reject }] };
+    }
+    if (!updatingDockVisibility) void flushDockVisibility();
+  });
+}
+
+async function flushDockVisibility(): Promise<void> {
+  updatingDockVisibility = true;
+  try {
+    while (pendingDockVisibility) {
+      const batch = pendingDockVisibility;
+      pendingDockVisibility = null;
+      try {
+        await invoke('configurar_dock', { visivel: batch.visible });
+        batch.waiters.forEach(({ resolve }) => resolve());
+      } catch (error) {
+        batch.waiters.forEach(({ reject }) => reject(error));
+      }
+    }
+  } finally {
+    updatingDockVisibility = false;
+  }
 }

@@ -38,7 +38,7 @@
 - [x] `cargo check --locked --target x86_64-pc-windows-gnu --tests`: aprovado sem warnings, incluindo comando IPC, estado pré-gerenciado e MessageBoxW. Não equivale à execução gráfica do release.
 - [x] Chromium com fronteira nativa simulada: falha de SQLite mantém erro/retry visível no painel e na ilha; registra causa de permissão; retry chega a ready; zero erros JavaScript não tratados.
 - [x] Revisão independente: Builder registra estados antes de qualquer janela; preferências iniciais não são sobrescritas; locks liberados antes de operações nativas; serviços de mídia/visibilidade seguem independentes.
-- [ ] Executável corrigido físico: recompilar na máquina do usuário e confirmar abertura/Alt+Space. O diagnóstico do executável anterior já confirmou a causa, mas este ambiente Linux não executa WebView2.
+- [x] Executável corrigido físico: usuário confirmou “App rodando agora” após a entrega `4e9b13a`. Abertura validada pelo relato; ajustes de retorno híbrido e área do dock foram registrados em [SYSTEM_DESIGN_WIDGET_RECOVERY.md](SYSTEM_DESIGN_WIDGET_RECOVERY.md). Este ambiente Linux não executa WebView2.
 
 ## 6. Revalidação Windows
 

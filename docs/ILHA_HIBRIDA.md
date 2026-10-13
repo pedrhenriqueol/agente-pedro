@@ -7,9 +7,11 @@ Em **Aparência → Ilha no desktop**, escolha:
 
 O mouse sobre a ilha mantém a interação disponível. Uso do teclado e dos controles também renova o prazo. Uma sessão de foco ou música, sozinha, não mantém o widget sobre outras aplicações.
 
-Para revelar uma ilha escondida, mantenha o mouse por aproximadamente **600 ms no centro da borda superior do monitor da ilha**. A região de revelação é estreita (6 pixels lógicos de altura) para não cobrir abas e botões. Em tela cheia, essa ação deliberada revela temporariamente a ilha; afastar o mouse volta a permitir seu recolhimento. Um cursor já parado nessa borda quando a ilha foi escondida precisa sair e voltar para revelar novamente.
+Para revelar uma ilha escondida, **aproxime o mouse do lugar onde a cápsula aparece, no topo**. Toda a largura compacta e uma proximidade de 12 pixels lógicos são reconhecidas; não é necessário acertar uma faixa fina da borda. A intenção dura 120 ms, observada a cada 80 ms: o retorno costuma ser decidido em 160–240 ms, antes do custo de aplicação no Windows. O prazo para esconder permanece 3 segundos.
 
-Ao esconder, a janela nativa é retirada da tela e deixa de interceptar cliques. Ao revelar, volta compacta e não toma o foco do aplicativo ativo. Foco e música continuam em execução. Selecionar Fixa restaura a ilha sem precisar usar a borda de revelação.
+Em tela cheia, essa aproximação deliberada revela temporariamente a ilha; afastar o mouse volta a permitir seu recolhimento. Um cursor já parado na região quando outro aplicativo fez a ilha se esconder precisa sair e voltar para revelar novamente. A região acompanha o monitor, DPI e a posição da ilha na área útil, inclusive com barra de tarefas no topo.
+
+Ao esconder, a janela nativa é retirada da tela e deixa de interceptar cliques. Ao revelar, volta compacta e não toma o foco do aplicativo ativo. A região de aproximação é observada globalmente pelo cursor e não cria um HWND transparente para capturar cliques. Foco e música continuam em execução. Selecionar Fixa também restaura a ilha.
 
 ## Implementação e limites
 
@@ -27,7 +29,7 @@ Os testes automatizados verificam preferências, IPC, decisões de inatividade/r
 
 1. Atualize o projeto, execute `npm ci` e `npm run tauri dev`.
 2. Em Aparência, selecione Híbrida e 3 segundos. Afaste o mouse; confirme o desaparecimento e clique na aplicação que estava atrás da ilha.
-3. Revele pelo centro da borda superior, interaja com os controles e afaste o mouse novamente.
-4. Maximize um navegador e teste também F11; confirme que a ilha se esconde sem interromper música ou foco. Revele deliberadamente pela borda para usar um controle, depois deixe-a se esconder.
+3. Aproxime o mouse do lugar da cápsula no topo, incluindo seus lados, sem tocar exatamente a borda. Confirme retorno compacto, interaja e afaste o mouse novamente.
+4. Maximize um navegador e teste também F11; confirme que a ilha se esconde sem interromper música ou foco. Aproxime novamente do lugar da ilha para usar um controle, depois deixe-a se esconder.
 5. Alterne para Fixa e confirme a restauração. Revele sem mudar o aplicativo em primeiro plano.
 6. Repita com diferentes DPI/monitores e janela expandida; não deve aparecer uma expansão antiga após recolher ou entrar em tela cheia.

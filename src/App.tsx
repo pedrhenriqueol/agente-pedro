@@ -119,7 +119,11 @@ export default function App() {
     return () => { cancelled = true; disposeBridge?.(); disposePreferences?.(); };
   }, [label, attempt]);
   useEffect(() => {
-    if (label && label !== 'dock') void setDockVisible(preferences.dockEnabled).catch(() => {});
+    // The dock owns its HWND state. Other WebViews only publish preferences;
+    // late startup values from main/island must not reshow an empty dock.
+    if (label === 'dock') void setDockVisible(preferences.dockEnabled).catch(error => {
+      void reportStartupStatus('frontend_error', error);
+    });
   }, [label, preferences.dockEnabled]);
   if (label === 'island' || label === 'dock') {
     if (phase !== 'ready') return <div className={`desktop-widget-shell ${label}-shell`}

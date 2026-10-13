@@ -103,7 +103,7 @@ export function AppearancePage() {
             {hybrid && <>
               <div className="island-delay-setting"><label htmlFor="island-hide-delay">Esconder após</label><select id="island-hide-delay" className="field" value={p.islandHideDelay}
                 onChange={event => p.updatePreferences({ islandHideDelay: Number(event.target.value) as 3 | 5 | 10 })}><option value={3}>3 segundos</option><option value={5}>5 segundos</option><option value={10}>10 segundos</option></select></div>
-              <p className="settings-help" id="island-visibility-help">Sem interação, ou quando outro app ocupa a tela, a ilha se esconde. Para revelar, aproxime o mouse do centro da borda superior. Foco e música continuam.</p>
+              <p className="settings-help" id="island-visibility-help">Sem interação, ou quando outro app ocupa a tela, a ilha se esconde. Aproxime o mouse do lugar da ilha, no topo, para ela voltar. Foco e música continuam.</p>
             </>}
             {!isTauri() && <p className="settings-help">A visibilidade híbrida funciona no aplicativo para Windows.</p>}
             <fieldset className="settings-fieldset"><legend className="label">Quando não há atividade</legend><div className="idle-choices">{idleOptions.map(({ value, label, detail, Icon }) =>
