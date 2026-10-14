@@ -1,4 +1,4 @@
-:root { --motion-ease-out: cubic-bezier(.16,1,.3,1); --motion-control: 140ms; --motion-panel: 220ms; --motion-exit: 100ms; }
+:root { --motion-ease-out: cubic-bezier(.18,.8,.28,1); --motion-control: 140ms; --motion-panel: 220ms; --motion-exit: 100ms; }
 /* Compress the icon, never the target rectangle: edge clicks remain valid. */
 :where(#root, .dialog-backdrop) button, :where(#root) summary { transition: box-shadow var(--motion-control) var(--motion-ease-out), background-color var(--motion-control), color var(--motion-control); }
 :where(#root, .dialog-backdrop) [data-pressed='true'] { box-shadow: inset 0 0 0 100px color-mix(in srgb, var(--accent) 10%, transparent); }

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { Page } from '../../lib/desktop';
+import { WAAPI_ENTER, WAAPI_EXIT, WAAPI_PANEL } from '../../lib/motionProfiles';
 
 const PageVisibilityContext = createContext(true);
 
@@ -17,7 +18,7 @@ export function useReducedMotion(preference: boolean) {
   return preference || system;
 }
 
-interface TransitionState<T> { current: T; outgoing: T[]; visited: T[]; revision: number }
+interface TransitionState<T> { current: T; outgoing: T[]; visited: T[]; revision: number; direction: 1 | -1 }
 interface RetainedTransitionProps<T extends string> {
   value: T;
   reduceMotion: boolean;
@@ -29,15 +30,16 @@ interface RetainedTransitionProps<T extends string> {
   panelId?: (value: T) => string;
   measureHeight?: boolean;
   values?: readonly T[];
+  order?: readonly T[];
   children: (value: T) => ReactNode;
 }
 
 /** Retain visited areas and reverse from the currently drawn values, including midway through entry. */
 export function RetainedTransition<T extends string>({ value, reduceMotion, containerClassName, sectionClassName,
-  slotAttribute, label, tabId, panelId, measureHeight = false, values = [], children }: RetainedTransitionProps<T>) {
+  slotAttribute, label, tabId, panelId, measureHeight = false, values = [], order = values, children }: RetainedTransitionProps<T>) {
   const immediate = useReducedMotion(reduceMotion);
   const parentActive = usePageActive();
-  const [state, setState] = useState<TransitionState<T>>(() => ({ current: value, outgoing: [], visited: [value], revision: 0 }));
+  const [state, setState] = useState<TransitionState<T>>(() => ({ current: value, outgoing: [], visited: [value], revision: 0, direction: 1 }));
   const container = useRef<HTMLDivElement>(null);
   const nodes = useRef(new Map<T, HTMLElement>());
   const animations = useRef<Animation[]>([]);
@@ -45,8 +47,11 @@ export function RetainedTransition<T extends string>({ value, reduceMotion, cont
   const sequence = useRef(0);
   const restingHeight = useRef<number | null>(null);
   if (state.current !== value) {
+    const from = order.indexOf(state.current);
+    const to = order.indexOf(value);
     setState({ current: value, outgoing: immediate ? [] : [...new Set([...state.outgoing, state.current])].filter(id => id !== value),
-      visited: state.visited.includes(value) ? state.visited : [...state.visited, value], revision: state.revision + 1 });
+      visited: state.visited.includes(value) ? state.visited : [...state.visited, value], revision: state.revision + 1,
+      direction: from >= 0 && to >= 0 && to < from ? -1 : 1 });
   }
 
   useLayoutEffect(() => {
@@ -59,7 +64,7 @@ export function RetainedTransition<T extends string>({ value, reduceMotion, cont
       if (visible.current.has(id)) {
         const computed = getComputedStyle(node);
         samples.set(id, { opacity: computed.opacity, transform: computed.transform });
-      } else samples.set(id, { opacity: '0', transform: 'translateY(4px)' });
+      } else samples.set(id, { opacity: '0', transform: `translateX(${state.direction * 10}px)` });
     }
     const initialHeight = measureHeight ? animations.current.some(animation => animation.playState === 'running')
       ? container.current?.getBoundingClientRect().height : restingHeight.current ?? container.current?.getBoundingClientRect().height : undefined;
@@ -73,18 +78,18 @@ export function RetainedTransition<T extends string>({ value, reduceMotion, cont
       const active = id === state.current;
       const sample = samples.get(id)!;
       node.style.opacity = active ? '1' : '0';
-      node.style.transform = active ? 'none' : 'translateY(-2px)';
-      if (!immediate && entering) {
+      node.style.transform = active ? 'none' : `translateX(${state.direction * -6}px)`;
+      if (!immediate && parentActive && entering) {
         animations.current.push(node.animate([sample, { opacity: active ? '1' : '0', transform: node.style.transform }],
-          { duration: active ? 180 : 100, easing: active ? 'cubic-bezier(.16,1,.3,1)' : 'ease-out' }));
+          active ? WAAPI_ENTER : WAAPI_EXIT));
       }
     }
     if (measureHeight && container.current) {
       const target = nodes.current.get(state.current)?.scrollHeight ?? initialHeight ?? 0;
-      container.current.style.height = entering && !immediate ? `${target}px` : 'auto';
-      if (entering && !immediate && initialHeight !== undefined && Math.abs(initialHeight - target) > 1) {
+      container.current.style.height = entering && !immediate && parentActive ? `${target}px` : 'auto';
+      if (entering && !immediate && parentActive && initialHeight !== undefined && Math.abs(initialHeight - target) > 1) {
         animations.current.push(container.current.animate([{ height: `${initialHeight}px` }, { height: `${target}px` }],
-          { duration: 200, easing: 'cubic-bezier(.16,1,.3,1)' }));
+          WAAPI_PANEL));
       }
     }
     const finish = () => {
@@ -96,7 +101,7 @@ export function RetainedTransition<T extends string>({ value, reduceMotion, cont
     };
     if (!animations.current.length) finish();
     else void Promise.allSettled(animations.current.map(animation => animation.finished)).then(finish);
-  }, [state.current, state.revision, immediate, measureHeight]);
+  }, [state.current, state.revision, immediate, measureHeight, parentActive]);
 
   useLayoutEffect(() => {
     const node = nodes.current.get(state.current);
@@ -110,7 +115,8 @@ export function RetainedTransition<T extends string>({ value, reduceMotion, cont
 
   useEffect(() => () => { sequence.current++; animations.current.forEach(animation => animation.cancel()); }, []);
 
-  return <div ref={container} className={containerClassName} data-transitioning={Boolean(state.outgoing.length)}>
+  return <div ref={container} className={containerClassName} data-transitioning={Boolean(state.outgoing.length)}
+    data-direction={state.direction === 1 ? 'forward' : 'backward'}>
     {values.filter(id => !state.visited.includes(id)).map(id => <section key={id} hidden role={tabId ? 'tabpanel' : undefined}
       id={panelId?.(id)} aria-labelledby={tabId?.(id)} />)}
     {state.visited.map(id => {
@@ -137,5 +143,7 @@ interface PageTransitionProps {
 
 export function PageTransition({ page, reduceMotion, label, children }: PageTransitionProps) {
   return <RetainedTransition value={page} reduceMotion={reduceMotion} label={label} containerClassName="navigation-pages"
-    sectionClassName="navigation-page" slotAttribute="data-page">{children}</RetainedTransition>;
+    sectionClassName="navigation-page" slotAttribute="data-page" order={PAGE_ORDER}>{children}</RetainedTransition>;
 }
+
+const PAGE_ORDER: readonly Page[] = ['home', 'routine', 'finance', 'music', 'appearance'];

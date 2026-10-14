@@ -11,14 +11,16 @@
   <path d="M90 58C105 53 151 53 166 58C184 64 181 76 169 80C151 84 146 97 128 97C110 97 105 84 87 80C75 76 72 64 90 58Z" fill="#6ee7b7"/>
   <rect x="35" y="139" width="186" height="73" rx="31" fill="#fff3dc"/>
   <g fill="#0c0e14">
-    <ellipse cx="72" cy="117" rx="8" ry="9"/>
-    <ellipse cx="184" cy="117" rx="8" ry="9"/>
+    <g class="pedro-mascot-eyes">
+      <ellipse cx="72" cy="117" rx="8" ry="9"/>
+      <ellipse cx="184" cy="117" rx="8" ry="9"/>
+    </g>
     <ellipse cx="112" cy="163" rx="5" ry="4" transform="rotate(15 112 163)"/>
     <ellipse cx="144" cy="163" rx="5" ry="4" transform="rotate(-15 144 163)"/>
   </g>
-  <g fill="#f8fafc">
+  <g fill="#f8fafc" class="pedro-mascot-eyes">
     <circle cx="74" cy="114" r="2.5"/>
     <circle cx="186" cy="114" r="2.5"/>
   </g>
-  <path d="M112 185Q128 197 144 185" fill="none" stroke="#0c0e14" stroke-width="6" stroke-linecap="round"/>
+  <path class="pedro-mascot-mouth" d="M112 185Q128 197 144 185" fill="none" stroke="#0c0e14" stroke-width="6" stroke-linecap="round"/>
 </svg>

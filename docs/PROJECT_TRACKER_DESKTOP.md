@@ -22,6 +22,7 @@
 | F11 | Ilha mínima, hover, toolbar e player horizontal | Alta | Geometria variável/presença | Implementado; QA Windows pendente | Repouso96px, atividade280px, abertura480/560/640px e entrada/saída coordenadas |
 | F12 | Agenda local e aparência contextual | Alta | Stores/preferências | Implementado; QA Windows pendente | Calendário por data real, cores, tamanho, opacidade e teclado |
 | F13 | Controles nos cantos superiores | Alta | WebViews próprias/controller | Implementado; QA Windows pendente | Frames pequenos, popups medidos, desligamento nativo e hide conjunto |
+| F14 | Ilha e menus imersivos com mascote contínuo | Alta | Motion/WAAPI, geometria e retenção existentes | Implementado; QA Windows pendente | Mola interrompível, frame reduzido após conclusão, marcador e direção, reações finitas e movimento reduzido |
 
 ## 3. Riscos e bloqueios
 
@@ -48,3 +49,10 @@ e [SYSTEM_DESIGN_MOTION_STABILITY.md](SYSTEM_DESIGN_MOTION_STABILITY.md): ciclo 
 entre cinco janelas reproduzido e eliminado, hover/reversões corrigidos e geometria nativa
 atualizada atomicamente. Validação: 96 testes Node, 24 políticas Rust, build e cargo check
 Windows; 568 amostras de hover sem recortes no Chromium. Validação física Windows pendente.
+
+O refinamento de imersão de 2026-10-14 está em
+[DESIGN_REPORT_IMMERSION.md](DESIGN_REPORT_IMMERSION.md). A consulta ao código do
+Niko está em [NIKO_MOTION_REVIEW.md](NIKO_MOTION_REVIEW.md); nenhum código ou asset
+proprietário foi reutilizado. Motion MIT, 96 testes aprovados, build e cargo check
+Windows. Hover validado em 569 amostras sem recortes; estados, teclado, falhas,
+reversões e menus dos cantos verificados no Chromium. [Prévia para baixar](previews/README.md).

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { animate, motion, useMotionValue } from 'motion/react';
 import { ChevronDown, ChevronUp, CircleAlert, LayoutGrid, ListTodo, Palette, RefreshCw, Volume2, VolumeX, X } from 'lucide-react';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
@@ -6,6 +7,7 @@ import { useFocusStore } from '../stores/useFocusStore';
 import { useMediaStore } from '../stores/useMediaStore';
 import { configureTopControl, type TopControlFrame, type TopControlLabel } from '../services/topControls';
 import { requestPage, type DesktopPage } from '../lib/desktop';
+import { POPOVER_ENTER, POPOVER_EXIT } from '../lib/motionProfiles';
 import { IslandAppearance } from './IslandAppearance';
 import { MusicVolume } from './MusicPlayer';
 import '../styles/desktop.css';
@@ -34,6 +36,10 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
   const [frame, setFrame] = useState(() => compactFrame(label, false));
   const [popupMounted, setPopupMounted] = useState(false);
   const [popupVisible, setPopupVisible] = useState(false);
+  const popupOpacity = useMotionValue(0);
+  const popupY = useMotionValue(-7);
+  const popupScale = useMotionValue(.985);
+  const lastPopupGoal = useRef<boolean | null>(null);
   const [nativeVisible, setNativeVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -57,9 +63,35 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
   const silent = media.snapshot.muted || media.snapshot.volume === 0;
   allowed.current = desiredVisible;
 
+  useLayoutEffect(() => {
+    if (!popupMounted) {
+      lastPopupGoal.current = null;
+      popupOpacity.stop(); popupY.stop(); popupScale.stop();
+      popupOpacity.set(0);
+      return;
+    }
+    const changed = lastPopupGoal.current !== popupVisible;
+    lastPopupGoal.current = popupVisible;
+    const target = { opacity: popupVisible ? 1 : 0, y: popupVisible || reduced ? 0 : -7, scale: popupVisible || reduced ? 1 : .985 };
+    if (reduced) {
+      // Explicit values survive popup remounts and let reduced motion stop an
+      // in-flight spring even when its destination has not changed.
+      popupOpacity.stop(); popupY.stop(); popupScale.stop();
+      popupOpacity.set(target.opacity); popupY.set(target.y); popupScale.set(target.scale);
+    } else if (changed) {
+      const transition = popupVisible ? POPOVER_ENTER : POPOVER_EXIT;
+      animate(popupOpacity, target.opacity, transition);
+      animate(popupY, target.y, transition);
+      animate(popupScale, target.scale, transition);
+    }
+  }, [popupMounted, popupVisible, reduced, popupOpacity, popupY, popupScale]);
+
+  useEffect(() => () => { popupOpacity.stop(); popupY.stop(); popupScale.stop(); }, [popupOpacity, popupY, popupScale]);
+
   useEffect(() => {
     const query = matchMedia('(prefers-reduced-motion: reduce)');
     const receive = () => setSystemReduced(query.matches);
+    receive();
     query.addEventListener('change', receive);
     return () => query.removeEventListener('change', receive);
   }, []);
@@ -240,7 +272,7 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
   }
 
   return <div ref={shell} className={`desktop-widget-shell desktop-top-controls is-${side}`}
-    data-top-visible={desiredVisible && nativeVisible} data-popup-open={popupVisible} data-island-tone={p.islandTone}
+    data-top-visible={desiredVisible && nativeVisible} data-popup-open={popupVisible} data-island-tone={p.islandTone} data-reduce-motion={reduced}
     aria-hidden={!desiredVisible || !nativeVisible} inert={!desiredVisible || !nativeVisible || undefined}
     style={{ '--top-frame-width': `${frame.width}px`, '--widget-opacity': p.islandOpacity } as CSSProperties}
     onPointerEnter={() => { pointerInside.current = true; if (work.current && intent.current) { clearTimeout(work.current); work.current = null; } useIslandVisibilityStore.getState().notifyActivity(); }}
@@ -273,8 +305,9 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
         </button>
       </>}
     </div>
-    {popupMounted && <div ref={popup} id={`${label}-popup`} className="desktop-top-panel" data-panel-visible={popupVisible}
-      aria-hidden={!popupVisible} inert={!popupVisible || undefined}>
+    {popupMounted && <motion.div ref={popup} id={`${label}-popup`} className="desktop-top-panel" data-panel-visible={popupVisible}
+      aria-hidden={!popupVisible} inert={!popupVisible || undefined}
+      style={{ opacity: popupOpacity, y: popupY, scale: popupScale, transformOrigin: `top ${side}` }}>
       <div ref={popupContent} className="desktop-top-panel-content">
       {side === 'left' ? <IslandAppearance idPrefix="top-left-appearance" onClose={() => closePopup(true)} onOpenFull={() => { void navigate('appearance'); }} /> : <>
         <div className="desktop-top-volume-heading"><span><Volume2 size={14} aria-hidden="true" /><strong>Som do Windows</strong></span><button type="button" aria-label="Fechar volume" onClick={() => closePopup(true)}><X size={14} aria-hidden="true" /></button></div>
@@ -284,7 +317,7 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
       </>}
       {error && <p className="desktop-top-error" role="alert">{error}<button type="button" onClick={() => closePopup()}>Tentar recolher</button></p>}
       </div>
-    </div>}
+    </motion.div>}
     {error && !popupMounted && <span className="desktop-top-sr-error" role="alert">{error}</span>}
   </div>;
 }

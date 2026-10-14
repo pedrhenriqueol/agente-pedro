@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
+import { LayoutGroup, motion, useAnimationControls } from 'motion/react';
 import { ArrowUpRight, CalendarDays, ChevronDown, Coffee, House, ListTodo, Music2, Palette, Pause, Play, RefreshCw, RotateCcw, Settings2, Timer, Wallet } from 'lucide-react';
 import { useFocusStore } from '../stores/useFocusStore';
 import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
@@ -14,6 +15,7 @@ import { IslandTaskSelection } from './IslandTaskSelection';
 import { IslandAppearance } from './IslandAppearance';
 import { completeIslandVisibilityTransition } from '../services/islandVisibility';
 import { islandGeometry, ISLAND_HEADER_HEIGHT, ISLAND_MAX_HEIGHT } from '../lib/islandGeometry';
+import { MARKER_TRAVEL, MOTION_INSTANT, SURFACE_CHANGE, SURFACE_CLOSE, SURFACE_OPEN } from '../lib/motionProfiles';
 import '../styles/desktop.css';
 import '../styles/island-surface.css';
 
@@ -39,6 +41,11 @@ export function DynamicIsland() {
   const [surfaceWidth, setSurfaceWidth] = useState(96);
   const [viewportWidth, setViewportWidth] = useState(() => isTauri() ? 1920 : window.innerWidth);
   const shell = useRef<HTMLDivElement>(null);
+  const surface = useRef<HTMLElement>(null);
+  const surfaceCommit = useRef<{ epoch: number; width: number; height: number; run: () => void } | null>(null);
+  const commitFrame = useRef<number | null>(null);
+  const surfaceControls = useAnimationControls();
+  const lastSurfaceGoal = useRef<string | null>(null);
   const visibilityAnimation = useRef<Animation | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,6 +74,7 @@ export function DynamicIsland() {
   const content = useRef<HTMLDivElement>(null);
   const outgoing = useRef<HTMLDivElement>(null);
   const outgoingAnimation = useRef<Animation | null>(null);
+  const contentDirection = useRef<'open' | 'forward' | 'back'>('open');
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const expander = useRef<HTMLButtonElement>(null);
 
@@ -104,6 +112,36 @@ export function DynamicIsland() {
   const toolbarVisible = requested && (phase !== 'preparing' || expandedGeometry);
   const failure = error || visibilityError || visibility.error;
 
+  // An interrupted spring can retain velocity. The DOM is bounded by the
+  // prepared frame, and a native shrink waits for its current visual target.
+  const finishSurfaceCommit = useCallback(() => {
+    const commit = surfaceCommit.current;
+    const node = surface.current;
+    if (!commit || !node) return;
+    if (commit.epoch !== epoch.current) { surfaceCommit.current = null; return; }
+    // The native visibility animation scales the ancestor. Layout dimensions
+    // stay authoritative even if its presented pixels are currently smaller.
+    const layout = getComputedStyle(node);
+    const visualWidth = Number.parseFloat(layout.width);
+    const visualHeight = Number.parseFloat(layout.height);
+    const expectedWidth = Math.min(commit.width, nativeWidth.current, window.innerWidth - FRAME_PADDING);
+    const expectedHeight = Math.min(commit.height, nativeHeight.current, window.innerHeight - FRAME_PADDING);
+    if (Math.abs(visualWidth - expectedWidth) > .6 || Math.abs(visualHeight - expectedHeight) > .6) return;
+    surfaceCommit.current = null;
+    commit.run();
+  }, []);
+  const checkSurfaceAfterPaint = useCallback(() => {
+    if (commitFrame.current !== null) cancelAnimationFrame(commitFrame.current);
+    commitFrame.current = requestAnimationFrame(() => { commitFrame.current = null; finishSurfaceCommit(); });
+  }, [finishSurfaceCommit]);
+  const afterSurfaceSettles = useCallback((run: () => void, sequence: number) => {
+    surfaceCommit.current = { epoch: sequence, width: width.current, height: height.current, run };
+    if (commitFrame.current !== null) cancelAnimationFrame(commitFrame.current);
+    // Instant/unchanged Motion targets may complete before React paints their
+    // DOM values. Check on the following paint instead of waiting on an event.
+    commitFrame.current = requestAnimationFrame(checkSurfaceAfterPaint);
+  }, [checkSurfaceAfterPaint]);
+
   const clearOutgoing = useCallback(() => {
     outgoingAnimation.current?.cancel();
     outgoingAnimation.current = null;
@@ -117,6 +155,9 @@ export function DynamicIsland() {
     timers.current.forEach(clearTimeout);
     timers.current = [];
     pendingTransition.current = null;
+    surfaceCommit.current = null;
+    if (commitFrame.current !== null) cancelAnimationFrame(commitFrame.current);
+    commitFrame.current = null;
     clearOutgoing();
     return epoch.current;
   }, [clearOutgoing]);
@@ -200,8 +241,10 @@ export function DynamicIsland() {
   const fadeOutgoing = useCallback((duration: number, sequence: number) => {
     const node = outgoing.current;
     if (!node || node.hidden) return;
-    const animation = node.animate([{ opacity: getComputedStyle(node).opacity, transform: 'translateY(0px)' },
-      { opacity: '0', transform: 'translateY(-3px)' }], { duration, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'forwards' });
+    const departure = contentDirection.current === 'open' ? 'translateY(-3px)'
+      : `translateX(${contentDirection.current === 'forward' ? -6 : 6}px)`;
+    const animation = node.animate([{ opacity: getComputedStyle(node).opacity, transform: 'none' },
+      { opacity: '0', transform: departure }], { duration, easing: 'cubic-bezier(.18,.8,.28,1)', fill: 'forwards' });
     outgoingAnimation.current = animation;
     void animation.finished.then(() => { if (sequence === epoch.current) clearOutgoing(); }).catch(() => {});
   }, [clearOutgoing]);
@@ -210,7 +253,8 @@ export function DynamicIsland() {
     if (!body.current) return;
     body.current.style.transition = 'none';
     body.current.style.opacity = '0';
-    body.current.style.transform = 'translateY(4px) scale(.995)';
+    body.current.style.transform = contentDirection.current === 'open' ? 'translateY(5px) scale(.997)'
+      : `translateX(${contentDirection.current === 'forward' ? 8 : -8}px) scale(.997)`;
   }
 
   useEffect(() => {
@@ -256,13 +300,13 @@ export function DynamicIsland() {
         if (grows) await resizeNative(false, Math.max(g.compactHeight, height.current), Math.max(g.compactWidth, width.current));
         if (sequence !== epoch.current || requestedExpansion.current) return;
         resizeSurface(g.compactHeight, g.compactWidth);
-        if (changing && !grows && !reduceMotion) schedule(() => {
+        if (changing && !grows) afterSurfaceSettles(() => {
           void resizeNative(false, g.compactHeight, g.compactWidth).catch(() => { if (sequence === epoch.current) preserveNativeFrame(); });
-        }, 280, sequence);
+        }, sequence);
         else await resizeNative(false, g.compactHeight, g.compactWidth);
       } catch { if (sequence === epoch.current) preserveNativeFrame(); }
     })();
-  }, [geometry.compactHeight, geometry.compactWidth, cancelWork, resizeNative, resizeSurface, preserveNativeFrame, visibility.visible, phase, reduceMotion, schedule]);
+  }, [geometry.compactHeight, geometry.compactWidth, cancelWork, resizeNative, resizeSurface, preserveNativeFrame, visibility.visible, phase, reduceMotion, afterSurfaceSettles]);
 
   useEffect(() => {
     if (!requested && available && restoreCompactFocus.current) {
@@ -347,6 +391,7 @@ export function DynamicIsland() {
     const presentation = capturePresentation();
     const sequence = cancelWork();
     installPresentation(presentation);
+    contentDirection.current = 'open';
     prepareBody();
     requestedExpansion.current = true;
     setError('');
@@ -367,6 +412,8 @@ export function DynamicIsland() {
     const presentation = capturePresentation();
     const sequence = cancelWork();
     installPresentation(presentation);
+    const rank = (value: IslandView, context: Activity) => value === 'today' ? 0 : value === 'activity' ? context === 'focus' ? 1 : 2 : value === 'menu' ? 3 : 4;
+    contentDirection.current = rank(nextView, nextActivity) >= rank(view, activity) ? 'forward' : 'back';
     prepareBody();
     notifyActivity();
     focusActivityControl.current = shouldFocusBody.current && nextView === 'activity';
@@ -387,7 +434,7 @@ export function DynamicIsland() {
     setPhase('collapsing');
     restoreCompactFocus.current = restore && visibility.visible;
     resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth);
-    schedule(() => {
+    afterSurfaceSettles(() => {
       void resizeNative(false).then(() => {
         if (sequence === epoch.current) setPhase('compact');
       }).catch(() => {
@@ -401,7 +448,7 @@ export function DynamicIsland() {
         setPhase('expanded');
         setError('Não foi possível recolher a ilha. Tente novamente.');
       });
-    }, reduceMotion ? 0 : 280, sequence);
+    }, sequence);
   }
 
   function toggleExpansion() {
@@ -459,14 +506,14 @@ export function DynamicIsland() {
         };
         if (reduceMotion) enter();
         else schedule(enter, transition.kind === 'open' ? 25 : 0, sequence);
-        schedule(() => {
+        afterSurfaceSettles(() => {
           setPhase('expanded');
           if (layout === layoutRevision.current && requestedExpansion.current && height.current === nextHeight) {
             void resizeNative(true, nextHeight).catch(() => {
               if (sequence === epoch.current && layout === layoutRevision.current && requestedExpansion.current) preserveNativeFrame();
             });
           }
-        }, reduceMotion ? 0 : 280, sequence);
+        }, sequence);
       } catch {
         if (sequence !== epoch.current) return;
         requestedExpansion.current = false;
@@ -503,7 +550,7 @@ export function DynamicIsland() {
         }
       }
     })();
-  }, [phase, view, activity, reduceMotion, measure, resizeSurface, resizeNative, preserveNativeFrame, schedule, fadeOutgoing, clearOutgoing]);
+  }, [phase, view, activity, reduceMotion, measure, resizeSurface, resizeNative, preserveNativeFrame, schedule, afterSurfaceSettles, fadeOutgoing, clearOutgoing]);
 
   useLayoutEffect(() => {
     if (phase !== 'expanded' || !content.current) return;
@@ -519,18 +566,18 @@ export function DynamicIsland() {
           if (growing) await resizeNative(true, next);
           if (disposed || sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) return;
           resizeSurface(next, geometryRef.current.expandedWidth);
-          if (!growing) schedule(() => {
+          if (!growing) afterSurfaceSettles(() => {
             if (layout !== layoutRevision.current || !requestedExpansion.current || height.current !== next) return;
             void resizeNative(true, next).catch(() => {
               if (sequence === epoch.current && layout === layoutRevision.current && requestedExpansion.current) preserveNativeFrame();
             });
-          }, reduceMotion ? 0 : 280, sequence);
+          }, sequence);
         } catch { if (!disposed && sequence === epoch.current && layout === layoutRevision.current) preserveNativeFrame(); }
       })();
     });
     observer.observe(content.current);
     return () => { disposed = true; observer.disconnect(); };
-  }, [phase, visibility.visible, reduceMotion, measure, resizeSurface, resizeNative, preserveNativeFrame, schedule]);
+  }, [phase, visibility.visible, reduceMotion, measure, resizeSurface, resizeNative, preserveNativeFrame, afterSurfaceSettles]);
 
   useEffect(() => {
     if (!bodyVisible || !available || !shouldFocusBody.current) return;
@@ -587,7 +634,28 @@ export function DynamicIsland() {
   const styles = { '--widget-opacity': preferences.islandOpacity, '--island-height': `${surfaceHeight}px`,
     '--island-width': `${surfaceWidth}px`, '--island-content-width': `${geometry.expandedWidth - 16}px` } as CSSProperties;
   const currentTab = view === 'today' ? 'today' : view === 'activity' ? activity : null;
+  const mascotVisible = toolbarVisible || !hasActivity;
+  const surfaceTransition = reduceMotion || resizingBlocked.current ? MOTION_INSTANT
+    : phase === 'collapsing' ? SURFACE_CLOSE : phase === 'expanding' ? SURFACE_OPEN : SURFACE_CHANGE;
   const tabs = [{ id: 'today', label: 'Hoje', Icon: CalendarDays }, { id: 'focus', label: 'Foco', Icon: Timer }, { id: 'music', label: 'Música', Icon: Music2 }] as const;
+
+  useLayoutEffect(() => {
+    const target = { width: surfaceWidth, height: surfaceHeight,
+      borderBottomLeftRadius: expandedGeometry ? 22 : 13, borderBottomRightRadius: expandedGeometry ? 22 : 13 };
+    const goal = `${surfaceWidth}:${surfaceHeight}:${expandedGeometry}`;
+    const first = lastSurfaceGoal.current === null;
+    const changed = lastSurfaceGoal.current !== goal;
+    lastSurfaceGoal.current = goal;
+    if (first || reduceMotion || resizingBlocked.current) {
+      // Changing reduced motion must also stop an animation already running,
+      // even when its destination has not changed.
+      surfaceControls.stop();
+      surfaceControls.set(target);
+      checkSurfaceAfterPaint();
+    } else if (changed) {
+      void surfaceControls.start(target, surfaceTransition).then(checkSurfaceAfterPaint);
+    }
+  }, [surfaceWidth, surfaceHeight, expandedGeometry, reduceMotion, surfaceTransition, surfaceControls, checkSurfaceAfterPaint]);
 
   return <div ref={shell} className="desktop-widget-shell island-shell" style={styles} data-reduce-motion={reduceMotion}
     data-island-tone={preferences.islandTone} data-island-visible={visibility.visible} data-visibility-intent={visibility.transition?.visible}
@@ -596,8 +664,10 @@ export function DynamicIsland() {
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { keyboardOwned.current = false; if (!pointerInside.current) leaveIsland(); } }}
     onKeyDownCapture={event => { keyboardOwned.current = true; notifyActivity(); if (event.key === 'Tab' && !requestedExpansion.current) { shouldFocusBody.current = true; beginOpen('today'); } }}
     onPointerDownCapture={() => { keyboardOwned.current = false; notifyActivity(); }} onPointerMoveCapture={notifyActivity}>
-    <section className={`pedro-island${expandedGeometry ? ' is-expanded' : ''}`} data-phase={phase} data-view={view}
-      data-has-activity={hasActivity} aria-label="Ilha do Pedro" onPointerEnter={enterIsland} onPointerLeave={leaveIsland}
+    <motion.section ref={surface} className={`pedro-island${expandedGeometry ? ' is-expanded' : ''}`} data-phase={phase} data-view={view}
+      initial={false} animate={surfaceControls}
+      style={{ maxWidth: `min(${nativeWidth.current}px, calc(100vw - 24px))`, maxHeight: `min(${nativeHeight.current}px, calc(100vh - 24px))` }}
+      data-has-activity={hasActivity} data-keyboard={keyboardOwned.current} aria-label="Ilha do Pedro" onPointerEnter={enterIsland} onPointerLeave={leaveIsland}
       onContextMenu={event => { event.preventDefault(); openMenu(); }}
       onKeyDown={event => {
         if (event.key === 'F10' && event.shiftKey) { event.preventDefault(); openMenu(); }
@@ -609,7 +679,7 @@ export function DynamicIsland() {
         onClick={event => { shouldFocusBody.current = event.detail === 0; toggleExpansion(); }}>
         <span className={`island-compact-mark${identity === 'music' ? ' is-music' : ''}`} aria-hidden="true">
           {identity === 'music' && media?.artwork && failedArtwork !== media.artwork ? <img src={media.artwork} alt="" onError={() => setFailedArtwork(media.artwork)} />
-            : identity === 'music' ? <Music2 size={14} /> : identity === 'focus' ? <Timer size={14} /> : identity === 'balance' ? <Wallet size={14} /> : <PedroMascot className="island-pedro-monogram" />}
+            : identity === 'music' ? <Music2 size={14} /> : identity === 'focus' ? <Timer size={14} /> : identity === 'balance' ? <Wallet size={14} /> : <span className="island-mascot-placeholder" />}
         </span>
         {identity !== 'minimal' && <span className="island-compact-title">{title}</span>}
         {identity === 'focus' ? <span className="island-compact-time">{formatTimer(focus.remainingSeconds)}</span>
@@ -618,28 +688,37 @@ export function DynamicIsland() {
       </button>
       <header className="island-toolbar" aria-hidden={!toolbarVisible} inert={!toolbarVisible || undefined}>
         <button ref={menuTrigger} className={`island-toolbar-brand${failure ? ' has-error' : ''}`} type="button" onClick={openMenu}
-          aria-label="Abrir menu do Pedro" title={failure || 'Menu do Pedro'} aria-haspopup="menu" aria-expanded={requested && view === 'menu'} aria-controls="island-menu"><PedroMascot className="island-pedro-monogram" /></button>
+          aria-label="Abrir menu do Pedro" title={failure || 'Menu do Pedro'} aria-haspopup="menu" aria-expanded={requested && view === 'menu'} aria-controls="island-menu"><span className="island-mascot-placeholder" /></button>
+        <LayoutGroup id="pedro-island-context">
         <div className="island-context-tabs" role="tablist" aria-label="Contexto da ilha">
-          {tabs.map(({ id, label, Icon }, index) => <button key={id} type="button" role="tab" aria-selected={currentTab === id}
+          {tabs.map(({ id, label, Icon }, index) => <motion.button key={id} type="button" role="tab" aria-selected={currentTab === id}
+            style={{ '--control-order': index } as CSSProperties}
             tabIndex={currentTab === id || currentTab === null && index === 0 ? 0 : -1} aria-label={label} title={label}
             aria-controls="island-details" onClick={event => { shouldFocusBody.current = event.detail === 0; switchView(id === 'today' ? 'today' : 'activity', id === 'music' ? 'music' : 'focus'); }}
             onKeyDown={event => { const move = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0; if (!move && event.key !== 'Home' && event.key !== 'End') return; event.preventDefault(); const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + move + tabs.length) % tabs.length; const item = tabs[target]; shouldFocusBody.current = false; switchView(item.id === 'today' ? 'today' : 'activity', item.id === 'music' ? 'music' : 'focus'); (event.currentTarget.parentElement?.children[target] as HTMLButtonElement)?.focus({ preventScroll: true }); }}>
+            {currentTab === id && <motion.i className="island-context-marker" layoutId="current-context" transition={reduceMotion ? MOTION_INSTANT : MARKER_TRAVEL} aria-hidden="true" />}
             <Icon size={13} aria-hidden="true" /><span>{label}</span>
-          </button>)}
+          </motion.button>)}
         </div>
+        </LayoutGroup>
         <div className="island-toolbar-actions">
           <button className="widget-icon-button" type="button" onClick={() => { void openPage('home'); }} aria-label="Abrir painel" title="Abrir painel"><ArrowUpRight size={13} /></button>
           <button className="widget-icon-button island-appearance-trigger" type="button" onClick={event => { shouldFocusBody.current = event.detail === 0; switchView(view === 'settings' ? (media || active || paused ? 'activity' : 'today') : 'settings'); }} aria-label="Aparência da ilha" title="Aparência" aria-expanded={requested && view === 'settings'} aria-controls="island-details"><Palette size={13} /></button>
           <button className="widget-icon-button island-collapse" type="button" onClick={() => closeIsland(true)} aria-label="Recolher ilha" title="Recolher ilha"><ChevronDown size={13} /></button>
         </div>
       </header>
+      <motion.span className="island-mascot-anchor" aria-hidden="true" initial={false}
+        animate={{ opacity: mascotVisible ? 1 : 0, left: toolbarVisible ? 9.5 : 7, top: toolbarVisible ? 6 : 2, scale: toolbarVisible ? 1 : .8 }}
+        transition={reduceMotion ? MOTION_INSTANT : SURFACE_CHANGE}>
+        <PedroMascot emotion={toolbarVisible ? activity === 'music' && view === 'activity' ? 'music' : active ? 'focus' : 'engaged' : 'calm'} interactive={available && toolbarVisible} />
+      </motion.span>
       <div id="island-details" ref={body} className={`island-details${bodyVisible ? ' is-visible' : ''}`} aria-hidden={!bodyVisible} inert={!bodyVisible || undefined}>
         <div className="island-details-content" ref={content}>
           <div hidden={view !== 'today'} inert={view !== 'today' || undefined} aria-hidden={view !== 'today' || undefined}>
             <IslandToday onOpenPanel={() => { void openPage('routine'); }} />
           </div>
-          {view === 'menu' ? <div id="island-menu" role="menu" aria-label="Menu do Pedro" className="island-menu" onKeyDown={menuKeys}>
-            {menu.map((item, index) => <button key={item.label} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem" tabIndex={menuIndex === index ? 0 : -1} onFocus={() => setMenuIndex(index)} onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index > 0 && index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
+          {view === 'menu' ? <div id="island-menu" role="menu" aria-label="Menu do Pedro" className="island-menu" data-enter={bodyVisible} onKeyDown={menuKeys}>
+            {menu.map((item, index) => <button key={item.label} style={{ '--item-order': index } as CSSProperties} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem" tabIndex={menuIndex === index ? 0 : -1} onFocus={() => setMenuIndex(index)} onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index > 0 && index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
           </div> : view === 'settings' ? <div className="island-appearance-popover"><IslandAppearance onOpenFull={() => { void openPage('appearance'); }} onClose={() => switchView(media || active || paused ? 'activity' : 'today')} /></div>
             : view === 'activity' ? activity === 'music' ? <div className="island-music-body"><MusicPlayer layout="island" /></div>
             : <div className="island-focus-block" aria-label={status}>
@@ -653,6 +732,6 @@ export function DynamicIsland() {
       </div>
       <div ref={outgoing} className="island-outgoing-layer" hidden aria-hidden="true" inert />
       {!bodyVisible && failure && <span className="island-sr-status" role="status">{failure}</span>}
-    </section>
+    </motion.section>
   </div>;
 }

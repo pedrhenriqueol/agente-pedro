@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { useReducedMotion } from './PageTransition';
+import { usePageActive, useReducedMotion } from './PageTransition';
+import { WAAPI_ENTER, WAAPI_EXIT, WAAPI_PANEL } from '../../lib/motionProfiles';
 
 interface AnimatedDisclosureProps { title: string; reduceMotion: boolean; children: ReactNode }
 
@@ -11,9 +12,10 @@ export function AnimatedDisclosure({ title, reduceMotion, children }: AnimatedDi
   const summary = useRef<HTMLElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const animation = useRef<Animation | null>(null);
+  const animations = useRef<Animation[]>([]);
   const sequence = useRef(0);
   const immediate = useReducedMotion(reduceMotion);
+  const parentActive = usePageActive();
   if (expanded && !present) setPresent(true);
 
   useLayoutEffect(() => {
@@ -22,25 +24,31 @@ export function AnimatedDisclosure({ title, reduceMotion, children }: AnimatedDi
     const epoch = ++sequence.current;
     const height = node.getBoundingClientRect().height;
     const opacity = getComputedStyle(node).opacity;
-    animation.current?.cancel();
-    animation.current = null;
+    const inner = content.current;
+    // Preserve both layers before cancellation so a rapid reversal resumes the
+    // currently drawn content instead of replaying an entrance from scratch.
+    const transform = height < 1 && expanded ? 'translateY(4px)' : inner ? getComputedStyle(inner).transform : 'none';
+    animations.current.forEach(animation => animation.cancel());
+    animations.current = [];
     if (!expanded && node.contains(document.activeElement)) summary.current?.focus({ preventScroll: true });
     const target = expanded ? content.current?.scrollHeight ?? 0 : 0;
     node.style.height = `${target}px`;
     node.style.opacity = expanded ? '1' : '0';
+    if (inner) inner.style.transform = expanded ? 'none' : 'translateY(-3px)';
     const finish = () => {
       if (epoch !== sequence.current) return;
       if (expanded) node.style.height = 'auto';
       else setPresent(false);
     };
-    if (immediate || !present || Math.abs(height - target) < 1) { finish(); return; }
+    if (immediate || !parentActive || !present || Math.abs(height - target) < 1) { finish(); return; }
     const current = node.animate([{ height: `${height}px`, opacity }, { height: `${target}px`, opacity: expanded ? '1' : '0' }],
-      { duration: 190, easing: 'cubic-bezier(.16,1,.3,1)' });
-    animation.current = current;
-    void current.finished.then(finish, () => {});
-  }, [expanded, present, immediate]);
+      expanded ? WAAPI_PANEL : { ...WAAPI_EXIT, duration: 160 });
+    animations.current = [current];
+    if (inner) animations.current.push(inner.animate([{ transform }, { transform: inner.style.transform }], expanded ? WAAPI_ENTER : WAAPI_EXIT));
+    void Promise.allSettled(animations.current.map(animation => animation.finished)).then(finish);
+  }, [expanded, present, immediate, parentActive]);
 
-  useEffect(() => () => { sequence.current++; animation.current?.cancel(); }, []);
+  useEffect(() => () => { sequence.current++; animations.current.forEach(animation => animation.cancel()); }, []);
   return <details className="settings-details is-animated-disclosure" open={present} data-expanded={expanded}
     onKeyDown={event => { if (event.key === 'Escape' && expanded) { event.preventDefault(); event.stopPropagation(); setExpanded(false); } }}>
     <summary ref={summary} aria-expanded={expanded} onClick={event => { event.preventDefault(); setExpanded(value => !value); }}>

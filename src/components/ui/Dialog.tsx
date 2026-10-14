@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { usePageActive } from './PageTransition';
 import { usePreferencesStore } from '../../stores/usePreferencesStore';
+import { WAAPI_ENTER, WAAPI_EXIT, WAAPI_PANEL } from '../../lib/motionProfiles';
 
 interface DialogProps { open?: boolean; title: string; description?: string; onClose: () => void; children: ReactNode; className?: string }
 
@@ -90,11 +91,9 @@ export function Dialog({ open = true, title, description, onClose, children, cla
       if (!open) setPresent(false);
       return;
     }
-    const duration = open ? 190 : 120;
-    const options: KeyframeAnimationOptions = { duration, easing: 'cubic-bezier(.16, 1, .3, 1)', fill: 'forwards' };
     const running = [
-      backdrop.animate([{ opacity: current[0].opacity }, { opacity }], options),
-      surface.animate([current[1], { opacity, transform }], options),
+      backdrop.animate([{ opacity: current[0].opacity }, { opacity }], { ...(open ? WAAPI_ENTER : WAAPI_EXIT), fill: 'forwards' }),
+      surface.animate([current[1], { opacity, transform }], { ...(open ? WAAPI_PANEL : WAAPI_EXIT), fill: 'forwards' }),
     ];
     animations.current = running;
     void Promise.all(running.map(animation => animation.finished)).then(() => {

@@ -1,5 +1,17 @@
 # Prévia para baixar
 
+## Imersão e transições atuais
+
+[Baixar vídeo e quatro prints em ZIP](https://github.com/pedrhenriqueol/agente-pedro/raw/refs/heads/main/docs/previews/pedro-imersao.zip).
+
+Extraia e abra `pedro-imersao-20s.mp4` no player do Windows, Chrome ou Edge.
+H.264, 1280×720, aproximadamente 20 segundos, sem áudio (14/10/2026).
+Mostra hover, ilha contínua, contextos, música e aparência. Os PNGs mostram
+os estados completos. A interface é real no Chromium; dados, mídia e respostas
+nativas são de demonstração, sem validação física do executável Windows.
+
+## Prévia anterior
+
 [Baixar prévia em ZIP](https://github.com/pedrhenriqueol/agente-pedro/raw/refs/heads/main/docs/previews/pedro-previa-20s.zip).
 
 Extraia o arquivo e abra `pedro-previa-20s.mp4` no player do Windows, Chrome ou Edge.

@@ -1,7 +1,7 @@
 /* One surface, two scales: a quiet top notch and a contextual desktop panel. */
 .island-shell { width: 100%; height: 100%; padding: 0 12px 24px; display: flex; align-items: flex-start; justify-content: center; transform-origin: top center; }
 .island-shell[data-island-visible="false"] { visibility: hidden; }
-.island-shell .pedro-island { flex: 0 0 auto; width: min(var(--island-width), calc(100vw - 24px)); height: var(--island-height); border-radius: 0 0 13px 13px; border-top: 0; transition: width 260ms cubic-bezier(.22,1,.36,1), height 260ms cubic-bezier(.22,1,.36,1), border-radius 260ms cubic-bezier(.22,1,.36,1); box-shadow: 0 5px 12px #0003; }
+.island-shell .pedro-island { flex: 0 0 auto; width: min(var(--island-width), calc(100vw - 24px)); height: var(--island-height); border-radius: 0 0 13px 13px; border-top: 0; transition: none; box-shadow: 0 5px 12px #0003; }
 .island-shell .pedro-island.is-expanded { border-radius: 0 0 22px 22px; }
 .island-shell .pedro-island[data-phase="collapsing"] { transition-duration: 260ms; }
 .island-shell .pedro-island[data-phase="switching"] { transition-duration: 220ms; }
@@ -62,3 +62,16 @@
 .island-shell .pedro-island[data-phase='expanding'] .island-toolbar { transition-delay: 25ms; }
 .island-toolbar-brand, .island-toolbar-actions button { transition: background 140ms ease, color 140ms ease, scale 140ms cubic-bezier(.22,1,.36,1); }
 .island-toolbar-actions button:active { scale: .94; }
+
+/* Geometry belongs to the spring, not to a second CSS interpolation. */
+.island-mascot-anchor { position: absolute; width: 20px; height: 20px; pointer-events: none; z-index: 5; transform-origin: center; }
+.island-mascot-placeholder { display: block; width: 20px; height: 20px; pointer-events: none; }
+.island-context-tabs button { position: relative; isolation: isolate; }
+.island-context-tabs button[aria-selected='true'] { background: transparent; }
+.island-context-marker { position: absolute; inset: 0; border-radius: 9px; background: var(--widget-raised); z-index: -1; pointer-events: none; }
+.island-shell .is-expanded .island-details { max-height: min(max(0px, calc(var(--island-height) - 40px)), max(0px, calc(100vh - 64px))); }
+.pedro-island[data-phase='expanding'] .island-context-tabs > button { animation: pedro-controls-arrive 160ms cubic-bezier(.18,.8,.28,1) both; animation-delay: calc(var(--control-order, 0) * 16ms); }
+.island-menu[data-enter='true'] .island-menu-item { animation: pedro-menu-arrive 150ms cubic-bezier(.18,.8,.28,1) both; animation-delay: calc(var(--item-order, 0) * 12ms); }
+.pedro-island[data-keyboard='true'] .island-menu-item { animation: none; }
+@keyframes pedro-controls-arrive { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+@keyframes pedro-menu-arrive { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }

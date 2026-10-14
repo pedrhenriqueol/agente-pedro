@@ -1,8 +1,12 @@
-.pedro-mascot { display: block; width: 100%; height: 100%; flex-shrink: 0; object-fit: contain; pointer-events: none; user-select: none; transition: transform 140ms cubic-bezier(.22,1,.36,1); }
-.island-compact-trigger:is(:hover, :focus-visible) .pedro-mascot,
-.island-toolbar-brand:is(:hover, :focus-visible) .pedro-mascot { transform: translateY(-1px); }
-.island-compact-trigger:is(:active, [data-pressed='true']) .pedro-mascot,
-.island-toolbar-brand:is(:active, [data-pressed='true']) .pedro-mascot { transform: scale(.94); }
-:root[data-reduced-motion='true'] .pedro-mascot,
-[data-reduce-motion='true'] .pedro-mascot { transition: none; transform: none !important; }
-@media (prefers-reduced-motion: reduce) { .pedro-mascot { transition: none; transform: none !important; } }
+.pedro-mascot { display: block; width: 100%; height: 100%; flex-shrink: 0; pointer-events: none; user-select: none; }
+.pedro-mascot > svg { display: block; width: 100%; height: 100%; overflow: visible; transform-origin: 50% 65%; }
+.pedro-mascot-eyes { transform-box: view-box; transform-origin: 128px 117px; }
+.pedro-mascot-mouth { transform-box: fill-box; transform-origin: center; }
+.pedro-mascot[data-movement='true'] .pedro-mascot-eyes,
+.pedro-mascot[data-movement='true'] .pedro-mascot-mouth { transition: transform 140ms cubic-bezier(.22,1,.36,1); }
+.pedro-mascot[data-movement='true'][data-emotion='focus'] .pedro-mascot-eyes { transform: scaleY(.86); }
+.pedro-mascot[data-movement='true'][data-emotion='engaged'] .pedro-mascot-mouth,
+.pedro-mascot[data-movement='true'][data-emotion='music'] .pedro-mascot-mouth { transform: scaleX(1.06); }
+:root[data-reduced-motion='true'] .pedro-mascot *,
+[data-reduce-motion='true'] .pedro-mascot * { transition: none !important; transform: none !important; }
+@media (prefers-reduced-motion: reduce) { .pedro-mascot * { transition: none !important; transform: none !important; } }
