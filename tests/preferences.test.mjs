@@ -25,8 +25,8 @@ const compiled = bundle.outputFiles[0].text;
 const STORAGE_KEY = 'pedro_preferences_v1';
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-function environment({ native = false, persisted } = {}) {
-  const storage = new Map();
+function environment({ native = false, persisted, sharedStorage, onWrite } = {}) {
+  const storage = sharedStorage ?? new Map();
   if (persisted) storage.set(STORAGE_KEY, JSON.stringify({ state: persisted, version: 0 }));
   const browserListeners = new Map();
   const nativeListeners = new Set();
@@ -41,7 +41,7 @@ function environment({ native = false, persisted } = {}) {
   };
   const localStorage = {
     getItem(key) { return storage.get(key) ?? null; },
-    setItem(key, value) { storage.set(key, value); },
+    setItem(key, value) { storage.set(key, value); onWrite?.(key, value); },
     removeItem(key) { storage.delete(key); },
   };
   window.localStorage = localStorage;
@@ -58,15 +58,18 @@ function environment({ native = false, persisted } = {}) {
   });
   return {
     ...module.exports, emitted, browserListeners, nativeListeners,
+    deliverStorage(key, newValue) {
+      for (const callback of browserListeners.get('storage') ?? []) callback({ key, newValue });
+    },
     saved() { return JSON.parse(storage.get(STORAGE_KEY)).state; },
     receiveStorage(preferences, key = STORAGE_KEY) {
       const newValue = JSON.stringify({ state: preferences, version: 0 });
       storage.set(key, newValue);
       for (const callback of browserListeners.get('storage') ?? []) callback({ key, newValue });
     },
-    receiveNative(source, preferences) {
+    receiveNative(source, preferences, revision) {
       for (const listener of nativeListeners) {
-        if (listener.event === 'pedro:preferences') listener.callback({ payload: { source, preferences } });
+        if (listener.event === 'pedro:preferences') listener.callback({ payload: { source, preferences, revision } });
       }
     },
     receiveNativePatch(patch) {
@@ -364,4 +367,64 @@ test('Novos ajustes de aparência são publicados e recebidos completos sem subs
     assert.equal(env.saved().islandSize, 'large');
     assert.equal(env.saved().islandHoverExpand, false);
   } finally { close(); }
+});
+
+
+test('Arrastar opacidade em cinco janelas converge sem tempestade de eventos storage', async () => {
+  const sharedStorage = new Map();
+  const windows = [];
+  const queue = [];
+  let writes = 0;
+  for (let source = 0; source < 5; source++) {
+    windows.push(environment({ sharedStorage, onWrite(key, value) {
+      writes++;
+      for (let target = 0; target < 5; target++) if (source !== target) queue.push({ target, key, value });
+    } }));
+  }
+  const cleanups = await Promise.all(windows.map(env => env.initializePreferencesSync()));
+  try {
+    for (const value of [.56, .63, .72, .81, .95]) windows[0].usePreferencesStore.getState().updatePreferences({ islandOpacity: value });
+    let delivered = 0;
+    while (queue.length && delivered < 500) {
+      const event = queue.shift(); delivered++;
+      windows[event.target].deliverStorage(event.key, event.value);
+    }
+    assert.equal(queue.length, 0, 'Receber preferências não pode produzir eventos novos em ciclo');
+    assert.equal(writes, 5, 'Só a janela que arrasta o slider persiste os cinco valores');
+    for (const env of windows) assert.equal(env.usePreferencesStore.getState().islandOpacity, .95);
+  } finally { cleanups.forEach(close => close()); }
+});
+
+
+test('Revisões atrasadas ou duplicadas não desfazem o último ajuste entre storage e IPC', async () => {
+  const origin = environment({ native: true });
+  origin.usePreferencesStore.getState().updatePreferences({ islandOpacity: .62 });
+  const first = origin.emitted.at(-1).payload;
+  origin.usePreferencesStore.getState().updatePreferences({ islandOpacity: .88 });
+  const latest = origin.emitted.at(-1).payload;
+  let writes = 0;
+  const receiver = environment({ native: true, onWrite() { writes++; } });
+  const stop = await receiver.initializePreferencesSync();
+  try {
+    receiver.receiveNative(latest.source, latest.preferences, latest.revision);
+    receiver.receiveNative(first.source, first.preferences, first.revision);
+    receiver.deliverStorage(STORAGE_KEY, JSON.stringify({ state: first.preferences, version: 0, revision: first.revision }));
+    receiver.receiveNative(latest.source, latest.preferences, latest.revision);
+    assert.equal(receiver.usePreferencesStore.getState().islandOpacity, .88);
+    assert.equal(receiver.saved().islandOpacity, .88);
+    assert.equal(writes, 1, 'IPC retém uma revisão nova uma única vez, sem eco');
+    assert.equal(receiver.emitted.length, 0);
+  } finally { stop(); }
+});
+
+test('Uma edição local consulta o último ajuste persistido antes de alterar outra preferência', async () => {
+  const sharedStorage = new Map();
+  const first = environment({ sharedStorage });
+  const second = environment({ sharedStorage });
+  first.usePreferencesStore.getState().updatePreferences({ theme: 'light', islandOpacity: .78 });
+  // second has not received first's storage event yet.
+  second.usePreferencesStore.getState().updatePreferences({ islandSize: 'large' });
+  assert.equal(second.saved().theme, 'light');
+  assert.equal(second.saved().islandOpacity, .78);
+  assert.equal(second.saved().islandSize, 'large');
 });

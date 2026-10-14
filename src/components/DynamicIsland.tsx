@@ -100,6 +100,7 @@ export function DynamicIsland() {
   const exiting = visibility.transition?.visible === false;
   const available = visibility.visible && !exiting;
   const requested = phase !== 'compact' && phase !== 'collapsing';
+  const toolbarVisible = requested && (phase !== 'preparing' || expandedGeometry);
   const failure = error || visibilityError || visibility.error;
 
   const clearOutgoing = useCallback(() => {
@@ -168,17 +169,19 @@ export function DynamicIsland() {
       Object.assign(layer.style, { position: 'absolute', left: '0', top: `${top}px`, width: `${source.offsetWidth}px`, opacity, transform });
       layer.append(clone); fragment.append(layer);
     };
-    if (outgoing.current && !outgoing.current.hidden) {
+    const incomingOpacity = body.current ? getComputedStyle(body.current).opacity : '0';
+    if (Number(incomingOpacity) < .25 && outgoing.current && !outgoing.current.hidden) {
       const style = getComputedStyle(outgoing.current);
-      const previous = document.createElement('div');
-      previous.style.position = 'relative';
-      previous.style.width = `${content.current?.offsetWidth || 350}px`;
-      previous.append(...[...outgoing.current.childNodes].map(node => node.cloneNode(true)));
-      const layer = document.createElement('div');
-      Object.assign(layer.style, { position: 'absolute', inset: '0', opacity: style.opacity, transform: style.transform });
-      layer.append(previous); fragment.append(layer);
-    }
-    if (body.current && content.current) {
+      // Keep one presentation, not a nested history of every interrupted tab.
+      const previous = outgoing.current.firstElementChild as HTMLElement | null;
+      if (previous) {
+        const layer = previous.cloneNode(true) as HTMLElement;
+        const previousStyle = getComputedStyle(previous);
+        layer.style.opacity = String(Number(style.opacity) * Number(previousStyle.opacity));
+        layer.style.transform = new DOMMatrix(style.transform).multiply(new DOMMatrix(previousStyle.transform)).toString();
+        fragment.append(layer);
+      }
+    } else if (body.current && content.current) {
       const style = getComputedStyle(body.current);
       copy(content.current, style.opacity, style.transform, -body.current.scrollTop);
     }
@@ -254,7 +257,7 @@ export function DynamicIsland() {
         resizeSurface(g.compactHeight, g.compactWidth);
         if (changing && !grows && !reduceMotion) schedule(() => {
           void resizeNative(false, g.compactHeight, g.compactWidth).catch(() => { if (sequence === epoch.current) preserveNativeFrame(); });
-        }, 240, sequence);
+        }, 280, sequence);
         else await resizeNative(false, g.compactHeight, g.compactWidth);
       } catch { if (sequence === epoch.current) preserveNativeFrame(); }
     })();
@@ -335,6 +338,10 @@ export function DynamicIsland() {
 
   function beginOpen(nextView: IslandView, nextActivity = defaultActivity) {
     if (!available) return;
+    // A leave deadline from the previous silhouette must not cancel a fresh
+    // hover/click while the native frame is still preparing its new bounds.
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
     notifyActivity();
     const presentation = capturePresentation();
     const sequence = cancelWork();
@@ -352,6 +359,9 @@ export function DynamicIsland() {
   }
 
   function switchView(nextView: IslandView, nextActivity = activity) {
+    if (requestedExpansion.current && phase !== 'compact' && phase !== 'collapsing'
+      && nextView === view && (nextView !== 'activity' || nextActivity === activity)
+      && width.current === geometryRef.current.expandedWidth) return;
     if (!requestedExpansion.current || height.current === geometryRef.current.compactHeight) { beginOpen(nextView, nextActivity); return; }
     const presentation = capturePresentation();
     const sequence = cancelWork();
@@ -367,16 +377,15 @@ export function DynamicIsland() {
   }
 
   function closeIsland(restore = false) {
-    const presentation = capturePresentation();
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    // The live body already has an exit transition. Fade it as the surface
+    // shrinks, instead of emptying a full-size rectangle before motion starts.
     const sequence = cancelWork();
-    installPresentation(presentation);
-    fadeOutgoing(reduceMotion ? 0 : 80, sequence);
-    const openHeight = height.current;
     requestedExpansion.current = false;
     setBodyVisible(false);
     setPhase('collapsing');
     restoreCompactFocus.current = restore && visibility.visible;
-    schedule(() => resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth), reduceMotion || openHeight === geometryRef.current.compactHeight ? 0 : 90, sequence);
+    resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth);
     schedule(() => {
       void resizeNative(false).then(() => {
         if (sequence === epoch.current) setPhase('compact');
@@ -391,7 +400,7 @@ export function DynamicIsland() {
         setPhase('expanded');
         setError('Não foi possível recolher a ilha. Tente novamente.');
       });
-    }, reduceMotion || openHeight === geometryRef.current.compactHeight ? 0 : 270, sequence);
+    }, reduceMotion ? 0 : 280, sequence);
   }
 
   function toggleExpansion() {
@@ -422,7 +431,6 @@ export function DynamicIsland() {
         await resizeNative(true, Math.max(nextHeight, nativeHeight.current), Math.max(geometryRef.current.expandedWidth, nativeWidth.current));
         preparedHeight = nativeHeight.current;
         if (sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) {
-          if (!requestedExpansion.current) void resizeNative(false).catch(() => {});
           return;
         }
         // Metadata/errors may change while IPC is pending. Use their current
@@ -433,7 +441,6 @@ export function DynamicIsland() {
           preparedHeight = nativeHeight.current;
         }
         if (sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) {
-          if (!requestedExpansion.current) void resizeNative(false).catch(() => {});
           return;
         }
         nextHeight = currentHeight;
@@ -447,10 +454,10 @@ export function DynamicIsland() {
             body.current.style.transform = '';
           }
           setBodyVisible(true);
-          fadeOutgoing(reduceMotion ? 0 : 110, sequence);
+          fadeOutgoing(reduceMotion ? 0 : 160, sequence);
         };
         if (reduceMotion) enter();
-        else schedule(enter, transition.kind === 'open' ? 50 : 10, sequence);
+        else schedule(enter, transition.kind === 'open' ? 25 : 0, sequence);
         schedule(() => {
           setPhase('expanded');
           if (layout === layoutRevision.current && requestedExpansion.current && height.current === nextHeight) {
@@ -458,7 +465,7 @@ export function DynamicIsland() {
               if (sequence === epoch.current && layout === layoutRevision.current && requestedExpansion.current) preserveNativeFrame();
             });
           }
-        }, reduceMotion ? 0 : transition.kind === 'open' ? 250 : 220, sequence);
+        }, reduceMotion ? 0 : 280, sequence);
       } catch {
         if (sequence !== epoch.current) return;
         requestedExpansion.current = false;
@@ -516,7 +523,7 @@ export function DynamicIsland() {
             void resizeNative(true, next).catch(() => {
               if (sequence === epoch.current && layout === layoutRevision.current && requestedExpansion.current) preserveNativeFrame();
             });
-          }, reduceMotion ? 0 : 240, sequence);
+          }, reduceMotion ? 0 : 280, sequence);
         } catch { if (!disposed && sequence === epoch.current && layout === layoutRevision.current) preserveNativeFrame(); }
       })();
     });
@@ -597,7 +604,7 @@ export function DynamicIsland() {
       }}>
       <button ref={expander} className="island-compact-trigger" type="button" aria-expanded={requested}
         aria-controls="island-details" aria-label={`Expandir ilha: ${title}`} title={title}
-        tabIndex={requested ? -1 : 0} aria-hidden={requested} inert={requested || undefined}
+        tabIndex={toolbarVisible ? -1 : 0} aria-hidden={toolbarVisible} inert={toolbarVisible || undefined}
         onClick={event => { shouldFocusBody.current = event.detail === 0; toggleExpansion(); }}>
         <span className={`island-compact-mark${identity === 'music' ? ' is-music' : ''}`} aria-hidden="true">
           {identity === 'music' && media?.artwork && failedArtwork !== media.artwork ? <img src={media.artwork} alt="" onError={() => setFailedArtwork(media.artwork)} />
@@ -608,7 +615,7 @@ export function DynamicIsland() {
           : identity === 'music' ? <span className={`island-equalizer${media?.playbackStatus === 'playing' && presentation === 'ready' ? ' is-playing' : ''}`} aria-hidden="true"><i /><i /><i /></span>
           : <ChevronDown size={11} aria-hidden="true" />}
       </button>
-      <header className="island-toolbar" aria-hidden={!requested} inert={!requested || undefined}>
+      <header className="island-toolbar" aria-hidden={!toolbarVisible} inert={!toolbarVisible || undefined}>
         <button ref={menuTrigger} className={`island-toolbar-brand${failure ? ' has-error' : ''}`} type="button" onClick={openMenu}
           aria-label="Abrir menu do Pedro" title={failure || 'Menu do Pedro'} aria-haspopup="menu" aria-expanded={requested && view === 'menu'} aria-controls="island-menu"><span className="island-pedro-monogram">p<span /></span></button>
         <div className="island-context-tabs" role="tablist" aria-label="Contexto da ilha">

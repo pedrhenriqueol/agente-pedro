@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod media;
@@ -8,6 +8,7 @@ mod desktop_integration;
 mod diagnostics;
 mod dock_visibility;
 mod top_controls;
+mod widget_frame;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -72,8 +73,8 @@ pub(crate) fn resize_island_frame(app: &AppHandle, width: f64, height: f64) -> R
     let physical_width = (width * scale).round() as i32;
     let x = area.position.x + (area.size.width as i32 - physical_width) / 2;
     let y = area.position.y + (2.0 * scale).round() as i32;
-    island.set_position(PhysicalPosition::new(x, y)).map_err(|error| error.to_string())?;
-    island.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())
+    widget_frame::set_frame(&island, PhysicalPosition::new(x, y),
+        PhysicalSize::new(physical_width as u32, (height * scale).round() as u32))
 }
 
 pub fn centralizar_dock_base(app: &AppHandle) {

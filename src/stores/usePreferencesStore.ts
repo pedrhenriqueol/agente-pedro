@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { emit, listen } from '@tauri-apps/api/event';
 
 export interface Preferences {
@@ -68,46 +67,97 @@ function snapshot(): Preferences {
     islandTone: s.islandTone, islandSize: s.islandSize, islandHoverExpand: s.islandHoverExpand });
 }
 
+interface PreferenceRevision { counter: number; actor: string }
+interface StoredPreferences { state: Preferences; version: 0; revision: PreferenceRevision | null }
+
+function revisionOf(value: unknown): PreferenceRevision | null {
+  if (!value || typeof value !== 'object') return null;
+  const r = value as PreferenceRevision;
+  return Number.isSafeInteger(r.counter) && r.counter >= 0 && r.counter < Number.MAX_SAFE_INTEGER
+    && typeof r.actor === 'string' && r.actor.length > 0 && r.actor.length <= 128 ? { counter: r.counter, actor: r.actor } : null;
+}
+function compare(a: PreferenceRevision, b: PreferenceRevision): number {
+  return a.counter - b.counter || (a.actor < b.actor ? -1 : a.actor > b.actor ? 1 : 0);
+}
+function readStored(): StoredPreferences | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    return value && typeof value.state === 'object' && value.state !== null
+      ? { state: normalize(value.state), version: 0, revision: revisionOf(value.revision) } : null;
+  } catch { return null; }
+}
+const initial = readStored();
+let revision = initial?.revision ?? null;
+
+function advanceRevision() {
+  const stored = readStored()?.revision;
+  revision = { counter: Math.max(Date.now(), (revision?.counter ?? 0) + 1, (stored?.counter ?? 0) + 1), actor: source };
+}
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ state: snapshot(), version: 0, revision })); }
+  catch (error) { console.warn('[Pedro] Não foi possível guardar as preferências:', error); }
+}
 async function announce() {
-  if (native()) await emit('pedro:preferences', { source, preferences: snapshot() }).catch(() => {});
+  if (native()) await emit('pedro:preferences', { source, preferences: snapshot(), revision }).catch(() => {});
 }
 
+// Explicit persistence is intentional: Zustand persist.setState writes even
+// when the update came from storage. In five WebViews that creates a feedback
+// loop as old slider values circulate. Only local edits originate writes.
 export const usePreferencesStore = create<Preferences & {
   updatePreferences: (patch: Partial<Preferences>) => void;
   resetPreferences: () => void;
-}>()(
-  persist((set) => ({
-    ...DEFAULT_PREFERENCES,
-    updatePreferences: patch => { set(state => normalize({ ...state, ...patch })); void announce(); },
-    resetPreferences: () => { set(DEFAULT_PREFERENCES); void announce(); },
-  }), {
-    name: STORAGE_KEY,
-    partialize: state => normalize(state),
-    merge: (persisted, current) => ({ ...current, ...normalize(persisted) }),
-  }),
-);
+}>()((set) => ({
+  ...(initial?.state ?? DEFAULT_PREFERENCES),
+  updatePreferences: patch => {
+    const stored = readStored();
+    const base = stored?.revision && (!revision || compare(stored.revision, revision) > 0) ? stored.state : snapshot();
+    advanceRevision();
+    set(normalize({ ...base, ...patch }));
+    save(); void announce();
+  },
+  resetPreferences: () => { advanceRevision(); set(DEFAULT_PREFERENCES); save(); void announce(); },
+}));
 
 /** Browser storage and native events carry preferences; received state is never rebroadcast. */
 export async function initializePreferencesSync(): Promise<() => void> {
-  const receive = (p: unknown) => {
+  const receive = (p: unknown, incoming: unknown, transport: 'storage' | 'native') => {
     if (p === null || typeof p !== 'object' || Array.isArray(p)) return;
+    const nextRevision = revisionOf(incoming);
+    if (nextRevision && revision && compare(nextRevision, revision) <= 0) return;
     const next = normalize(p);
+    if (nextRevision) revision = nextRevision;
     if (JSON.stringify(next) !== JSON.stringify(snapshot())) usePreferencesStore.setState(next);
+    // Shared storage already contains the sender's write. Never write it back.
+    // A native-only delivery may precede storage or come from an older app;
+    // retain it once, but never overwrite a newer persisted envelope.
+    if (transport === 'native') {
+      const stored = readStored();
+      if (nextRevision ? !stored?.revision || compare(nextRevision, stored.revision) > 0
+        : JSON.stringify(stored?.state) !== JSON.stringify(next)) save();
+    }
   };
   const storage = (event: StorageEvent) => {
     if (event.key !== STORAGE_KEY || !event.newValue) return;
-    try { receive(JSON.parse(event.newValue).state); } catch { /* Ignore incomplete writes from another context. */ }
+    try {
+      const value = JSON.parse(event.newValue);
+      receive(value.state, value.revision, 'storage');
+    } catch { /* Ignore incomplete writes from another context. */ }
   };
   window.addEventListener('storage', storage);
   const unlisteners: (() => void)[] = [];
   if (native()) {
     try {
-      unlisteners.push(await listen<{ source: string; preferences: Preferences }>('pedro:preferences', event => {
-        if (event.payload && event.payload.source !== source) receive(event.payload.preferences);
+      unlisteners.push(await listen<{ source: string; preferences: Preferences; revision?: PreferenceRevision }>('pedro:preferences', event => {
+        if (event.payload && event.payload.source !== source) receive(event.payload.preferences, event.payload.revision, 'native');
       }));
       unlisteners.push(await listen<Partial<Preferences>>('pedro:preferences-patch', event => {
         const patch = validPatch(event.payload);
-        if (Object.keys(patch).length > 0) receive({ ...snapshot(), ...patch });
+        if (Object.keys(patch).length > 0) {
+          const next = normalize({ ...snapshot(), ...patch });
+          if (JSON.stringify(next) === JSON.stringify(snapshot())) return;
+          advanceRevision(); usePreferencesStore.setState(next); save();
+        }
       }));
     } catch { /* Persisted preferences still work if the native event layer is unavailable. */ }
   }

@@ -12,7 +12,7 @@
 .island-today-presence { display: grid; position: relative; min-width: 0; }
 .island-today-presence > .island-today-tabpanel { grid-area: 1 / 1; min-width: 0; }
 .island-today-tabpanel[hidden] { display: none; }
-.island-today-tabpanel[data-presence='leaving'] { pointer-events: none; }
+.island-today-tabpanel[data-presence='leaving'] { position: absolute; inset: 0; pointer-events: none; }
 .island-today-tabpanel > .page-content { animation: none; }
 .island-today-list { list-style: none; margin: 0; padding: 0; }
 .island-today-list > li { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 5px 0; }

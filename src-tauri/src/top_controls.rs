@@ -131,12 +131,15 @@ pub fn init(app: &AppHandle) {
 /// also protects the desktop if a corner WebView misses the visibility event.
 pub(crate) fn hide_with_island(app: &AppHandle) {
     let Some(state) = app.try_state::<TopControlsState>() else { return; };
-    let mut policy = state.inner.lock().unwrap_or_else(|error| error.into_inner());
     for side in [Side::Left, Side::Right] {
-        let request = policy.request(side, TopControlSnapshot::compact(side));
+        let request = state.inner.lock().unwrap_or_else(|error| error.into_inner())
+            .request(side, TopControlSnapshot::compact(side));
         if let Some(request) = request {
             match apply(app, request) {
-                Ok(value) => policy.slots[side.index()].applied = value,
+                Ok(value) => {
+                    let mut policy = state.inner.lock().unwrap_or_else(|error| error.into_inner());
+                    if policy.accepts(request) { policy.slots[side.index()].applied = value; }
+                },
                 Err(error) => crate::diagnostics::write("top_controls_warning", error),
             }
         }
@@ -147,13 +150,17 @@ fn schedule(app: &AppHandle, state: TopControlsState, request: Request,
     response: Option<tauri::async_runtime::Sender<Result<TopControlSnapshot, String>>>) -> Result<(), String> {
     let ui_app = app.clone();
     app.run_on_main_thread(move || {
-        let mut policy = state.inner.lock().unwrap_or_else(|error| error.into_inner());
-        let result = if policy.accepts(request) {
+        let accepted = state.inner.lock().unwrap_or_else(|error| error.into_inner()).accepts(request);
+        let result = if accepted {
+            // ShowWindow / WebView resize can dispatch nested window messages.
+            // Never hold a policy lock across a native operation.
             let result = apply(&ui_app, request);
-            if let Ok(value) = result { policy.slots[request.side.index()].applied = value; }
+            let mut policy = state.inner.lock().unwrap_or_else(|error| error.into_inner());
+            if policy.accepts(request) {
+                if let Ok(value) = result { policy.slots[request.side.index()].applied = value; }
+            }
             result
-        } else { Ok(policy.slots[request.side.index()].applied) };
-        drop(policy);
+        } else { Ok(state.inner.lock().unwrap_or_else(|error| error.into_inner()).slots[request.side.index()].applied) };
         if let Err(error) = &result { crate::diagnostics::write("top_controls_warning", error); }
         if let Some(response) = response { let _ = response.try_send(result); }
     }).map_err(|error| format!("Não foi possível atualizar o controle na thread da interface: {error}"))
@@ -172,8 +179,7 @@ fn apply(app: &AppHandle, request: Request) -> Result<TopControlSnapshot, String
         let visible = request.value.visible && previously_visible && app.try_state::<crate::island_visibility::IslandVisibilityState>()
             .is_none_or(|state| crate::island_visibility::is_visible(&state));
         let rollback = (|| {
-            window.set_position(previous_position).map_err(|error| error.to_string())?;
-            window.set_size(previous_size).map_err(|error| error.to_string())?;
+            crate::widget_frame::set_frame(&window, previous_position, previous_size)?;
             window.set_ignore_cursor_events(!visible).map_err(|error| error.to_string())?;
             set_native_visible(&window, visible)
         })();
@@ -201,10 +207,9 @@ fn apply_frame(app: &AppHandle, window: &WebviewWindow, request: Request) -> Res
         let (bounded, x, y) = placement(request.side, value, area.position.x, area.position.y,
             area.size.width, area.size.height, monitor.scale_factor());
         value = bounded;
-        window.set_position(tauri::PhysicalPosition::new(x, y)).map_err(|error| error.to_string())?;
         let scale = monitor.scale_factor();
-        window.set_size(tauri::PhysicalSize::new((value.width * scale).round() as u32,
-            (value.height * scale).round() as u32)).map_err(|error| error.to_string())?;
+        crate::widget_frame::set_frame(window, tauri::PhysicalPosition::new(x, y),
+            tauri::PhysicalSize::new((value.width * scale).round() as u32, (value.height * scale).round() as u32))?;
     }
     let cursor = window.set_ignore_cursor_events(!value.visible)
         .map_err(|error| format!("Não foi possível atualizar a interação nativa do controle: {error}"));

@@ -284,6 +284,7 @@ struct Runtime {
     epoch: Instant,
     generation: u64,
     pending: Option<u64>,
+    applying: bool,
     transition_deadline_ms: Option<u64>,
     error_source: Option<VisibilityErrorSource>,
     compact_frame: CompactFrame,
@@ -303,6 +304,7 @@ impl Default for Runtime {
             epoch: Instant::now(),
             generation: 0,
             pending: None,
+            applying: false,
             transition_deadline_ms: None,
             error_source: None,
             compact_frame: CompactFrame::default(),
@@ -326,7 +328,7 @@ impl Runtime {
 
     fn completion_target(&self, generation: u64) -> Option<bool> {
         let transition = self.snapshot.transition.as_ref()?;
-        (self.generation == generation && self.pending == Some(generation)
+        (!self.applying && self.generation == generation && self.pending == Some(generation)
             && transition.generation == generation && transition.visible == self.policy.visible)
             .then_some(transition.visible)
     }
@@ -464,7 +466,7 @@ fn reconcile(app: &AppHandle, state: &IslandVisibilityState) {
     let mut event = None;
     let request = {
         let mut runtime = state.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if runtime.pending == Some(runtime.generation) {
+        if runtime.applying || runtime.pending == Some(runtime.generation) {
             None
         } else if runtime.policy.visible == runtime.snapshot.visible && runtime.snapshot.transition.is_none()
             && runtime.error_source != Some(VisibilityErrorSource::Window) {
@@ -485,27 +487,35 @@ fn reconcile(app: &AppHandle, state: &IslandVisibilityState) {
     let ui_app = app.clone();
     let ui_state = state.clone();
     if let Err(error) = app.run_on_main_thread(move || {
-        let event = {
+        let (target, compact, was_visible) = {
             let mut runtime = ui_state.inner.lock().unwrap_or_else(|e| e.into_inner());
-            if runtime.generation != generation {
+            if runtime.generation != generation || runtime.applying {
                 if runtime.pending == Some(generation) { runtime.pending = None; }
                 return;
             }
+            runtime.applying = true;
+            (runtime.policy.visible, runtime.compact_frame, runtime.snapshot.visible)
+        };
+        // Native calls can pump WebView messages that query this same state.
+        // They must run outside the mutex, with generation checked afterwards.
+        let update = if target {
+            platform::apply(&ui_app, true, compact)
+        } else {
+            match platform::release_input(&ui_app) {
+                Ok(()) => Ok((was_visible, None)),
+                Err(_) => platform::apply(&ui_app, false, compact),
+            }
+        };
+        let event = {
+            let mut runtime = ui_state.inner.lock().unwrap_or_else(|e| e.into_inner());
+            runtime.applying = false;
+            if runtime.generation != generation {
+                if runtime.pending == Some(generation) { runtime.pending = None; }
+                drop(runtime);
+                reconcile(&ui_app, &ui_state);
+                return;
+            }
             let before = runtime.snapshot.clone();
-            let target = runtime.policy.visible;
-            let compact = runtime.compact_frame;
-            // Hide only after the WebView acknowledges its exit. Native input
-            // is released immediately, so the fading surface cannot block apps.
-            let update = if target {
-                platform::apply(&ui_app, true, compact)
-            } else {
-                match platform::release_input(&ui_app) {
-                    Ok(()) => Ok((runtime.snapshot.visible, None)),
-                    // If the system refuses click-through, prefer immediately
-                    // hiding over leaving an invisible target over another app.
-                    Err(_) => platform::apply(&ui_app, false, compact),
-                }
-            };
             match update {
                 Ok((actual_visible, error)) => {
                     runtime.snapshot.visible = actual_visible;
@@ -550,13 +560,25 @@ fn complete_transition(app: &AppHandle, state: &IslandVisibilityState, generatio
     let ui_app = app.clone();
     let ui_state = state.clone();
     if let Err(error) = app.run_on_main_thread(move || {
-        let event = {
+        let (target, compact) = {
             let mut runtime = ui_state.inner.lock().unwrap_or_else(|e| e.into_inner());
             let Some(target) = runtime.completion_target(generation) else { return; };
+            runtime.applying = true;
+            (target, runtime.compact_frame)
+        };
+        let update = if target { None } else { Some(platform::apply(&ui_app, false, compact)) };
+        let event = {
+            let mut runtime = ui_state.inner.lock().unwrap_or_else(|e| e.into_inner());
+            runtime.applying = false;
+            if runtime.generation != generation {
+                if runtime.pending == Some(generation) { runtime.pending = None; }
+                drop(runtime);
+                reconcile(&ui_app, &ui_state);
+                return;
+            }
             let before = runtime.snapshot.clone();
-            if !target {
-                let compact = runtime.compact_frame;
-                match platform::apply(&ui_app, false, compact) {
+            if let Some(update) = update {
+                match update {
                     Ok((actual_visible, error)) => {
                         runtime.snapshot.visible = actual_visible;
                         runtime.snapshot.error = error;
@@ -762,10 +784,8 @@ mod platform {
                                 if prior != (runtime.policy.visible, runtime.policy.reason) {
                                     runtime.generation = runtime.generation.wrapping_add(1);
                                 }
-                                // Read actual visibility under the same lock used by UI apply.
-                                // A pre-lock sample could overwrite a confirmed hide/show with
-                                // stale truth and emit a newer but incorrect revision.
-                                runtime.snapshot.visible = actual_visibility(raw);
+                                // Do not publish intermediate native state during a commit.
+                                if !runtime.applying { runtime.snapshot.visible = actual_visibility(raw); }
                                 runtime.changed(&before)
                             };
                             emit(&worker_app, event);

@@ -42,3 +42,9 @@ Validação gráfica nativa depende de máquina Windows. A nuvem permite compila
 - Base preservada: commit do usuário `79f071f`, incluindo AGENTS.md, skills e templates sem alterações nesta entrega. SQLite, esquema, cálculos monetários e armazenamento dos registros não foram modificados.
 
 A reformulação de 2026-10-13 está descrita em [DESIGN_REPORT_ISLAND_REDESIGN.md](DESIGN_REPORT_ISLAND_REDESIGN.md) e [SYSTEM_DESIGN_ISLAND_REDESIGN.md](SYSTEM_DESIGN_ISLAND_REDESIGN.md). As contagens anteriores acima documentam suas entregas; a validação atual está no relatório da reformulação. As duas novas janelas são do Pedro e não alteram o Shell do Windows.
+
+A correção de 2026-10-14 está em [DESIGN_REPORT_MOTION_STABILITY.md](DESIGN_REPORT_MOTION_STABILITY.md)
+e [SYSTEM_DESIGN_MOTION_STABILITY.md](SYSTEM_DESIGN_MOTION_STABILITY.md): ciclo de preferências
+entre cinco janelas reproduzido e eliminado, hover/reversões corrigidos e geometria nativa
+atualizada atomicamente. Validação: 96 testes Node, 24 políticas Rust, build e cargo check
+Windows; 568 amostras de hover sem recortes no Chromium. Validação física Windows pendente.
