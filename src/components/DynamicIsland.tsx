@@ -6,6 +6,7 @@ import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { requestPage, syncIslandSize, readIslandAvailableWidth, type DesktopPage } from '../lib/desktop';
 import { MusicPlayer } from './MusicPlayer';
+import { PedroMascot } from './PedroMascot';
 import { useMediaStore } from '../stores/useMediaStore';
 import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
 import { IslandToday } from './IslandToday';
@@ -608,7 +609,7 @@ export function DynamicIsland() {
         onClick={event => { shouldFocusBody.current = event.detail === 0; toggleExpansion(); }}>
         <span className={`island-compact-mark${identity === 'music' ? ' is-music' : ''}`} aria-hidden="true">
           {identity === 'music' && media?.artwork && failedArtwork !== media.artwork ? <img src={media.artwork} alt="" onError={() => setFailedArtwork(media.artwork)} />
-            : identity === 'music' ? <Music2 size={14} /> : identity === 'focus' ? <Timer size={14} /> : identity === 'balance' ? <Wallet size={14} /> : <span className="island-pedro-monogram">p<span /></span>}
+            : identity === 'music' ? <Music2 size={14} /> : identity === 'focus' ? <Timer size={14} /> : identity === 'balance' ? <Wallet size={14} /> : <PedroMascot className="island-pedro-monogram" />}
         </span>
         {identity !== 'minimal' && <span className="island-compact-title">{title}</span>}
         {identity === 'focus' ? <span className="island-compact-time">{formatTimer(focus.remainingSeconds)}</span>
@@ -617,7 +618,7 @@ export function DynamicIsland() {
       </button>
       <header className="island-toolbar" aria-hidden={!toolbarVisible} inert={!toolbarVisible || undefined}>
         <button ref={menuTrigger} className={`island-toolbar-brand${failure ? ' has-error' : ''}`} type="button" onClick={openMenu}
-          aria-label="Abrir menu do Pedro" title={failure || 'Menu do Pedro'} aria-haspopup="menu" aria-expanded={requested && view === 'menu'} aria-controls="island-menu"><span className="island-pedro-monogram">p<span /></span></button>
+          aria-label="Abrir menu do Pedro" title={failure || 'Menu do Pedro'} aria-haspopup="menu" aria-expanded={requested && view === 'menu'} aria-controls="island-menu"><PedroMascot className="island-pedro-monogram" /></button>
         <div className="island-context-tabs" role="tablist" aria-label="Contexto da ilha">
           {tabs.map(({ id, label, Icon }, index) => <button key={id} type="button" role="tab" aria-selected={currentTab === id}
             tabIndex={currentTab === id || currentTab === null && index === 0 ? 0 : -1} aria-label={label} title={label}

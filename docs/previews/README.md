@@ -8,3 +8,9 @@ Mostra hover, menus, música e aparência da versão `46cd18c` (14/10/2026).
 
 Captura da interface real em Chromium, com dados e mídia de demonstração e
 respostas nativas simuladas. A validação do executável Windows é separada.
+
+## Mascote original
+
+[Baixar mascote e prints em ZIP](https://github.com/pedrhenriqueol/agente-pedro/raw/refs/heads/main/docs/previews/pedro-mascote.zip).
+
+Inclui o vetor SVG, PNG transparente e aplicação na ilha/painel (14/10/2026).

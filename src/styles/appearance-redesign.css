@@ -18,8 +18,7 @@
 .settings-redesign-preview .settings-preview-island { gap: 6px; width: 96px; max-width: 100%; min-height: 24px; height: 24px; padding: 0 7px; border-top: 0; border-radius: 0 0 10px 10px; margin: 0 auto; background: color-mix(in srgb, var(--preview-surface) calc(var(--settings-preview-opacity) * 100%), transparent); border-color: var(--preview-line); box-shadow: 0 4px 8px #0002; }
 .settings-redesign-preview .settings-preview-island[data-has-activity='true'] { width: min(280px, 100%); height: 30px; min-height: 30px; }
 .settings-redesign-preview[data-top-controls='true'] .settings-preview-island[data-has-activity='true'] { max-width: calc(100% - 66px); }
-.settings-preview-monogram { position: relative; display: block; flex: 0 0 12px; color: var(--accent); font-size: 17px; font-weight: 750; line-height: 1; padding-bottom: 2px; }
-.settings-preview-monogram > span { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: currentColor; bottom: 2px; right: 0; }
+.settings-preview-monogram { width: 16px; height: 16px; flex: 0 0 16px; }
 .settings-redesign-preview .settings-preview-context { justify-content: center; gap: 5px; font-size: 9px; }
 .settings-redesign-preview .settings-preview-artwork { width: 19px; height: 19px; border-radius: 5px; }
 .settings-redesign-preview .settings-preview-context:has(.settings-preview-artwork) ~ svg { display: none; }

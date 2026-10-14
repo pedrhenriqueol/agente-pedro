@@ -13,8 +13,8 @@
 .island-compact-mark img { width: 100%; height: 100%; object-fit: cover; }
 .island-compact-title { font-size: 10px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .island-compact-time { color: var(--widget-accent); font-size: 10px; font-variant-numeric: tabular-nums; }
-.island-pedro-monogram { display: block; position: relative; font-size: 18px; font-weight: 750; color: var(--widget-accent); line-height: 1; padding-bottom: 2px; }
-.island-pedro-monogram > span { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: currentColor; bottom: 3px; right: -3px; }
+.island-pedro-monogram { width: 20px; height: 20px; }
+.island-compact-mark .island-pedro-monogram { width: 16px; height: 16px; object-fit: contain; }
 .island-equalizer { display: flex; align-items: center; justify-content: center; gap: 2px; width: 13px; height: 14px; flex: 0 0 13px; }
 .island-equalizer i { height: 4px; width: 2px; background: var(--widget-muted); border-radius: 1px; transform-origin: center; }
 .island-equalizer.is-playing i { background: var(--widget-accent); height: 11px; animation: pedro-media-pulse 900ms ease-in-out infinite alternate; }
@@ -61,4 +61,4 @@
 .island-shell .pedro-island[data-phase='collapsing'] .island-details { transform: translateY(-5px) scale(.99); }
 .island-shell .pedro-island[data-phase='expanding'] .island-toolbar { transition-delay: 25ms; }
 .island-toolbar-brand, .island-toolbar-actions button { transition: background 140ms ease, color 140ms ease, scale 140ms cubic-bezier(.22,1,.36,1); }
-.island-toolbar-brand:active, .island-toolbar-actions button:active { scale: .94; }
+.island-toolbar-actions button:active { scale: .94; }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { emit } from '@tauri-apps/api/event';
 import { House, Focus, Wallet, Music2, SlidersHorizontal, ArrowRight, Command, HardDrive, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { CustomTitleBar } from './CustomTitleBar';
+import { PedroMascot } from './PedroMascot';
 import { RoutineModule } from './RoutineModule';
 import { FinanceModule } from './FinanceModule';
 import { HomePage } from './HomePage';
@@ -66,7 +67,7 @@ export function MainDashboard() {
     <CustomTitleBar onSearch={() => { setQuery(''); setSearchOpen(true); }} />
     <div className="app-layout">
       <aside className="sidebar" aria-label="Navegação do Pedro">
-        <div className="sidebar-brand"><span className="brand-mark" aria-hidden="true">p<span /></span><div className="sidebar-brand-copy"><strong>Pedro</strong><span>Seu espaço pessoal</span></div></div>
+        <div className="sidebar-brand"><PedroMascot className="brand-mark" /><div className="sidebar-brand-copy"><strong>Pedro</strong><span>Seu espaço pessoal</span></div></div>
         <span className="sidebar-label">Sua rotina</span>
         <nav ref={nav} id="area-navigation" aria-label="Áreas do aplicativo">{PAGES.map(({ id, name, Icon }) =>
           <button key={id} type="button" className={'nav-item ' + (page === id ? 'active' : '')} data-destination={id}

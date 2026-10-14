@@ -6,6 +6,7 @@ import { DynamicIsland } from './components/DynamicIsland';
 import { DesktopDock } from './components/DesktopDock';
 import { DesktopTopControls } from './components/DesktopTopControls';
 import { MainDashboard } from './components/MainDashboard';
+import { PedroMascot } from './components/PedroMascot';
 import { useFocusStore } from './stores/useFocusStore';
 import { useFinanceStore } from './stores/useFinanceStore';
 import { initializeStateBridge } from './services/stateBridge';
@@ -148,10 +149,10 @@ export default function App() {
       </div>
     </div>;
   }
-  if (phase === 'error') return <div className="boot-screen"><div className="panel boot-card"><span className="brand-mark">p<span /></span><h1>Vamos tentar novamente</h1>
+  if (phase === 'error') return <div className="boot-screen"><div className="panel boot-card"><PedroMascot className="brand-mark" /><h1>Vamos tentar novamente</h1>
     <p>Não foi possível abrir seus dados. Eles não foram substituídos. Tente reabrir o aplicativo ou carregar novamente.</p>
     <button type="button" className="button primary" onClick={() => setAttempt(a => a + 1)}><RefreshCw size={16} />Carregar novamente</button></div></div>;
-  if (phase !== 'ready' || !label) return <div className="boot-screen" role="status"><span className="brand-mark">p<span /></span><span>Preparando seu espaço…</span></div>;
+  if (phase !== 'ready' || !label) return <div className="boot-screen" role="status"><PedroMascot className="brand-mark" /><span>Preparando seu espaço…</span></div>;
   if (label === 'island') return <DynamicIsland />;
   if (label === 'dock') return <DesktopDock />;
   return <MainDashboard />;

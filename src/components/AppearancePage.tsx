@@ -4,6 +4,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { RetainedTransition } from './ui/PageTransition';
 import { SelectionIndicator } from './ui/SelectionIndicator';
 import { AnimatedDisclosure } from './ui/AnimatedDisclosure';
+import { PedroMascot } from './PedroMascot';
 import '../styles/appearance-motion.css';
 import '../styles/appearance-redesign.css';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
@@ -202,7 +203,7 @@ export function AppearancePage() {
           style={{ '--settings-preview-opacity': p.islandOpacity } as CSSProperties}>
           {p.topControlsEnabled && <div className="settings-preview-corners" aria-hidden="true"><span><Palette size={10} /><LayoutGrid size={10} /></span><span><Volume2 size={11} /></span></div>}
           <div className="settings-preview-island" data-has-activity={previewHasActivity} aria-label="Prévia da ilha">
-            <span className="settings-preview-monogram" aria-hidden="true">p<span /></span>
+            <PedroMascot className="settings-preview-monogram" />
             <div className="settings-preview-context">{previewMode === 'music' ? <>
               <span className="settings-preview-artwork">{artwork ? <img src={artwork} alt="" onError={() => setFailedArtwork(artwork)} /> : <Music2 size={15} aria-hidden="true" />}</span>
               <span>{session?.title || (media.presentationPhase === 'loading' ? 'Buscando…' : media.presentationPhase === 'unavailable' ? 'Indisponível' : 'Sem reprodução')}</span><span className={'presence-dot' + (media.presentationPhase === 'ready' && session?.playbackStatus === 'playing' ? ' is-active' : '')} />

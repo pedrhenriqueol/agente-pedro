@@ -5,7 +5,7 @@
   transition: width 220ms cubic-bezier(.22, 1, .36, 1), padding 220ms cubic-bezier(.22, 1, .36, 1);
 }
 .app-shell .sidebar-brand { gap: 11px; min-height: 40px; margin: 0 10px 32px; }
-.app-shell .sidebar-brand .brand-mark { width: 36px; height: 36px; border-radius: 11px; font-size: 25px; }
+.app-shell .sidebar-brand .brand-mark { width: 36px; height: 36px; }
 .app-shell .sidebar-brand-copy { min-width: 0; overflow: hidden; white-space: nowrap; transition: opacity 120ms ease; }
 .app-shell .sidebar-brand-copy strong { font-size: 18px; }
 .app-shell .sidebar-brand-copy > span { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
