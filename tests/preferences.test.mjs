@@ -275,3 +275,93 @@ test('Restaurar preferências volta à ilha fixa e 3 segundos no estado, armazen
   assert.deepEqual(env.saved(), plain(env.DEFAULT_PREFERENCES));
   assert.deepEqual(env.emitted[0].payload.preferences, plain(env.DEFAULT_PREFERENCES));
 });
+
+test('Preferências anteriores recebem expansão por mouse e tamanho médio sem perder escolhas existentes', () => {
+  const env = environment({ persisted: {
+    theme: 'light', accent: 'violet', islandIdle: 'balance', islandVisibility: 'hybrid',
+    islandHideDelay: 10, islandOpacity: .72, dockOpacity: .81, dockEnabled: true,
+  } });
+  const state = env.usePreferencesStore.getState();
+  assert.equal(state.islandSize, 'medium');
+  assert.equal(state.topControlsEnabled, true);
+  assert.equal(state.islandHoverExpand, true);
+  assert.equal(state.islandTone, 'graphite');
+  assert.equal(state.customAccent, '#10b981');
+  state.updatePreferences({ islandSize: 'large', islandHoverExpand: false, islandTone: 'midnight', topControlsEnabled: false, topControlsEnabled: false });
+  const reopened = environment({ persisted: env.saved() }).usePreferencesStore.getState();
+  for (const [key, value] of Object.entries({
+    theme: 'light', accent: 'violet', islandIdle: 'balance', islandVisibility: 'hybrid',
+    islandHideDelay: 10, islandOpacity: .72, dockOpacity: .81, dockEnabled: true,
+    islandSize: 'large', islandHoverExpand: false, islandTone: 'midnight',
+  })) assert.equal(reopened[key], value);
+});
+
+test('Controles nos cantos preservam uma escolha desligada e sincronizam sem eco', async () => {
+  const env = environment({ native: true, persisted: { theme: 'light', topControlsEnabled: false } });
+  assert.equal(env.usePreferencesStore.getState().topControlsEnabled, false);
+  env.usePreferencesStore.getState().updatePreferences({ islandSize: 'large' });
+  assert.equal(environment({ persisted: env.saved() }).usePreferencesStore.getState().topControlsEnabled, false);
+  const close = await env.initializePreferencesSync();
+  try {
+    env.receiveNativePatch({ topControlsEnabled: true });
+    assert.equal(env.saved().topControlsEnabled, true);
+    env.receiveNativePatch({ topControlsEnabled: 'false' });
+    assert.equal(env.saved().topControlsEnabled, true);
+    assert.equal(env.saved().theme, 'light');
+    assert.equal(env.emitted.length, 1);
+    env.usePreferencesStore.getState().resetPreferences();
+    assert.equal(env.saved().topControlsEnabled, true);
+  } finally { close(); }
+});
+
+test('Cores personalizadas aceitam somente hexadecimal completo e não introduzem CSS ou chaves arbitrárias', () => {
+  for (const customAccent of ['red', '#abc', '#12345678', '#xyzxyz', 'var(--text)', '#fff; background:url(x)', ' #123456', null, 10]) {
+    const env = environment({ persisted: { accent: 'custom', customAccent, islandSize: 'huge', islandTone: 'glass', islandHoverExpand: 'true' } });
+    const state = env.usePreferencesStore.getState();
+    assert.equal(state.customAccent, '#10b981');
+    assert.equal(state.islandSize, 'medium');
+    assert.equal(state.islandTone, 'graphite');
+    assert.equal(state.islandHoverExpand, true);
+    assert.equal(typeof state.updatePreferences, 'function');
+  }
+  const env = environment({ persisted: { accent: 'custom', customAccent: '#A1B2C3' } });
+  assert.equal(env.usePreferencesStore.getState().customAccent, '#a1b2c3');
+  env.usePreferencesStore.getState().updatePreferences({ customAccent: '#ABCDEF', islandTone: 'emerald', islandSize: 'small' });
+  assert.equal(env.saved().customAccent, '#abcdef');
+  assert.equal(env.saved().islandTone, 'emerald');
+  assert.equal(env.saved().islandSize, 'small');
+});
+
+test('Novos ajustes de aparência são publicados e recebidos completos sem substituir ações da store', async () => {
+  const env = environment({ native: true });
+  const close = await env.initializePreferencesSync();
+  try {
+    for (const accent of ['amber', 'rose', 'custom']) {
+      env.usePreferencesStore.getState().updatePreferences({
+        accent, customAccent: '#11AA88', islandTone: 'emerald', islandSize: 'small', islandHoverExpand: false,
+      });
+      const event = env.emitted.at(-1);
+      assert.deepEqual(event.payload.preferences, env.saved());
+      assert.equal(event.payload.preferences.customAccent, '#11aa88');
+      assert.equal(event.payload.preferences.islandHoverExpand, false);
+    }
+    const update = env.usePreferencesStore.getState().updatePreferences;
+    env.receiveNative('other-window', {
+      ...plain(env.DEFAULT_PREFERENCES), accent: 'custom', customAccent: '#3412AB',
+      islandTone: 'midnight', islandSize: 'large', islandHoverExpand: false,
+      updatePreferences: 'hostile', arbitrary: 'ignored',
+    });
+    assert.equal(env.saved().customAccent, '#3412ab');
+    assert.equal(env.saved().islandTone, 'midnight');
+    assert.equal(env.saved().islandSize, 'large');
+    assert.equal(env.saved().islandHoverExpand, false);
+    assert.equal(env.usePreferencesStore.getState().updatePreferences, update);
+    assert.equal(Object.hasOwn(env.saved(), 'arbitrary'), false);
+    assert.equal(env.emitted.length, 3);
+    env.receiveNativePatch({ customAccent: 'url(x)', islandTone: 'clear', islandSize: 500, islandHoverExpand: 'false' });
+    assert.equal(env.saved().customAccent, '#3412ab');
+    assert.equal(env.saved().islandTone, 'midnight');
+    assert.equal(env.saved().islandSize, 'large');
+    assert.equal(env.saved().islandHoverExpand, false);
+  } finally { close(); }
+});

@@ -4,22 +4,28 @@ import { emit, listen } from '@tauri-apps/api/event';
 
 export interface Preferences {
   theme: 'dark' | 'light' | 'system';
-  accent: 'mint' | 'violet' | 'blue';
+  accent: 'mint' | 'violet' | 'blue' | 'amber' | 'rose' | 'custom';
+  customAccent: string;
   reduceMotion: boolean;
   dockEnabled: boolean;
+  topControlsEnabled: boolean;
   sidebarCollapsed: boolean;
   nativeMaterial: 'system' | 'solid';
   islandIdle: 'clock' | 'focus' | 'balance' | 'minimal';
   islandVisibility: 'fixed' | 'hybrid';
   islandHideDelay: 3 | 5 | 10;
   islandOpacity: number;
+  islandTone: 'graphite' | 'midnight' | 'emerald';
+  islandSize: 'small' | 'medium' | 'large';
+  islandHoverExpand: boolean;
   dockOpacity: number;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  theme: 'dark', accent: 'mint', reduceMotion: false, dockEnabled: false,
+  theme: 'dark', accent: 'mint', customAccent: '#10b981', reduceMotion: false, dockEnabled: false, topControlsEnabled: true,
   sidebarCollapsed: false, nativeMaterial: 'system',
   islandIdle: 'clock', islandVisibility: 'fixed', islandHideDelay: 3, islandOpacity: .96, dockOpacity: .94,
+  islandTone: 'graphite', islandSize: 'medium', islandHoverExpand: true,
 };
 const STORAGE_KEY = 'pedro_preferences_v1';
 const source = crypto.randomUUID();
@@ -31,13 +37,18 @@ function validPatch(value: unknown): Partial<Preferences> {
   const v = value as Record<string, unknown>;
   const p: Partial<Preferences> = {};
   if (v.theme === 'dark' || v.theme === 'light' || v.theme === 'system') p.theme = v.theme;
-  if (v.accent === 'mint' || v.accent === 'violet' || v.accent === 'blue') p.accent = v.accent;
+  if (v.accent === 'mint' || v.accent === 'violet' || v.accent === 'blue' || v.accent === 'amber' || v.accent === 'rose' || v.accent === 'custom') p.accent = v.accent;
+  if (typeof v.customAccent === 'string' && /^#[a-f\d]{6}$/i.test(v.customAccent)) p.customAccent = v.customAccent.toLowerCase();
   if (v.nativeMaterial === 'system' || v.nativeMaterial === 'solid') p.nativeMaterial = v.nativeMaterial;
   if (v.islandIdle === 'clock' || v.islandIdle === 'focus' || v.islandIdle === 'balance' || v.islandIdle === 'minimal') p.islandIdle = v.islandIdle;
   if (v.islandVisibility === 'fixed' || v.islandVisibility === 'hybrid') p.islandVisibility = v.islandVisibility;
   if (v.islandHideDelay === 3 || v.islandHideDelay === 5 || v.islandHideDelay === 10) p.islandHideDelay = v.islandHideDelay;
+  if (v.islandTone === 'graphite' || v.islandTone === 'midnight' || v.islandTone === 'emerald') p.islandTone = v.islandTone;
+  if (v.islandSize === 'small' || v.islandSize === 'medium' || v.islandSize === 'large') p.islandSize = v.islandSize;
+  if (typeof v.islandHoverExpand === 'boolean') p.islandHoverExpand = v.islandHoverExpand;
   if (typeof v.reduceMotion === 'boolean') p.reduceMotion = v.reduceMotion;
   if (typeof v.dockEnabled === 'boolean') p.dockEnabled = v.dockEnabled;
+  if (typeof v.topControlsEnabled === 'boolean') p.topControlsEnabled = v.topControlsEnabled;
   if (typeof v.sidebarCollapsed === 'boolean') p.sidebarCollapsed = v.sidebarCollapsed;
   if (typeof v.islandOpacity === 'number' && Number.isFinite(v.islandOpacity)) p.islandOpacity = Math.max(.55, Math.min(1, v.islandOpacity));
   if (typeof v.dockOpacity === 'number' && Number.isFinite(v.dockOpacity)) p.dockOpacity = Math.max(.55, Math.min(1, v.dockOpacity));
@@ -50,10 +61,11 @@ function normalize(value: unknown): Preferences {
 
 function snapshot(): Preferences {
   const s = usePreferencesStore.getState();
-  return normalize({ theme: s.theme, accent: s.accent, reduceMotion: s.reduceMotion,
-    dockEnabled: s.dockEnabled, islandIdle: s.islandIdle, islandVisibility: s.islandVisibility,
+  return normalize({ theme: s.theme, accent: s.accent, customAccent: s.customAccent, reduceMotion: s.reduceMotion,
+    dockEnabled: s.dockEnabled, topControlsEnabled: s.topControlsEnabled, islandIdle: s.islandIdle, islandVisibility: s.islandVisibility,
     nativeMaterial: s.nativeMaterial, sidebarCollapsed: s.sidebarCollapsed,
-    islandHideDelay: s.islandHideDelay, islandOpacity: s.islandOpacity, dockOpacity: s.dockOpacity });
+    islandHideDelay: s.islandHideDelay, islandOpacity: s.islandOpacity, dockOpacity: s.dockOpacity,
+    islandTone: s.islandTone, islandSize: s.islandSize, islandHoverExpand: s.islandHoverExpand });
 }
 
 async function announce() {

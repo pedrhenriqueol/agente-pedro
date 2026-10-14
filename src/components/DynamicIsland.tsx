@@ -1,23 +1,28 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { ArrowLeft, ArrowUpRight, ChevronDown, CircleCheck, Coffee, Ellipsis, House, ListTodo, Music2, Palette, Pause, Play, RefreshCw, RotateCcw, Settings2, Sparkles, Timer, Wallet } from 'lucide-react';
+import { isTauri } from '@tauri-apps/api/core';
+import { ArrowUpRight, CalendarDays, ChevronDown, Coffee, House, ListTodo, Music2, Palette, Pause, Play, RefreshCw, RotateCcw, Settings2, Timer, Wallet } from 'lucide-react';
 import { useFocusStore } from '../stores/useFocusStore';
 import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
-import { requestPage, syncIslandSize, type DesktopPage } from '../lib/desktop';
-import { MusicPlayer, MusicVolume } from './MusicPlayer';
+import { requestPage, syncIslandSize, readIslandAvailableWidth, type DesktopPage } from '../lib/desktop';
+import { MusicPlayer } from './MusicPlayer';
 import { useMediaStore } from '../stores/useMediaStore';
 import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
 import { IslandToday } from './IslandToday';
 import { IslandTaskSelection } from './IslandTaskSelection';
+import { IslandAppearance } from './IslandAppearance';
+import { completeIslandVisibilityTransition } from '../services/islandVisibility';
+import { islandGeometry, ISLAND_HEADER_HEIGHT, ISLAND_MAX_HEIGHT } from '../lib/islandGeometry';
 import '../styles/desktop.css';
+import '../styles/island-surface.css';
 
 type IslandView = 'activity' | 'menu' | 'settings' | 'today';
 type IslandPhase = 'compact' | 'preparing' | 'expanding' | 'expanded' | 'switching' | 'collapsing';
 type Activity = 'focus' | 'music';
-const COMPACT_HEIGHT = 48;
-const HEADER_HEIGHT = 58;
+const COMPACT_HEIGHT = 24;
+const HEADER_HEIGHT = ISLAND_HEADER_HEIGHT;
 const FRAME_PADDING = 24;
-const MAX_HEIGHT = 400;
+const MAX_HEIGHT = ISLAND_MAX_HEIGHT;
 
 function formatTimer(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
@@ -30,6 +35,18 @@ export function DynamicIsland() {
   const [view, setView] = useState<IslandView>('activity');
   const [activity, setActivity] = useState<Activity>('focus');
   const [surfaceHeight, setSurfaceHeight] = useState(COMPACT_HEIGHT);
+  const [surfaceWidth, setSurfaceWidth] = useState(96);
+  const [viewportWidth, setViewportWidth] = useState(() => isTauri() ? 1920 : window.innerWidth);
+  const shell = useRef<HTMLDivElement>(null);
+  const visibilityAnimation = useRef<Animation | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerInside = useRef(false);
+  const keyboardOwned = useRef(false);
+  const shouldFocusBody = useRef(false);
+  const restoreCompactFocus = useRef(false);
+  const nativeWidth = useRef(380);
+  const width = useRef(96);
   const [bodyVisible, setBodyVisible] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
   const [systemReduceMotion, setSystemReduceMotion] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -42,7 +59,7 @@ export function DynamicIsland() {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const requestedExpansion = useRef(false);
   const height = useRef(COMPACT_HEIGHT);
-  const nativeHeight = useRef(COMPACT_HEIGHT);
+  const nativeHeight = useRef(48); // boot HWND72 minus transparent padding
   const resizeSequence = useRef(0);
   const confirmedResizeSequence = useRef(0);
   const body = useRef<HTMLDivElement>(null);
@@ -51,9 +68,8 @@ export function DynamicIsland() {
   const outgoingAnimation = useRef<Animation | null>(null);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const expander = useRef<HTMLButtonElement>(null);
-  const settingsFirst = useRef<HTMLButtonElement>(null);
+
   const menuItems = useRef<(HTMLButtonElement | null)[]>([]);
-  const restoreTrigger = useRef<'menu' | 'expand'>('expand');
   const focusActivityControl = useRef(false);
   const pendingTransition = useRef<{ epoch: number; view: IslandView; kind: 'open' | 'switch' } | null>(null);
   const focus = useFocusStore();
@@ -77,7 +93,12 @@ export function DynamicIsland() {
   const status = saveFailed ? 'Registro pendente' : saving ? 'Registrando sessão…' : finished ? 'Sessão concluída' : paused ? 'Sessão pausada' : active ? `${modeName} em andamento` : 'Um passo de cada vez';
   const defaultActivity: Activity = !active && !paused && !recordPending && media ? 'music' : 'focus';
   const identity = active || paused || recordPending ? 'focus' : media ? 'music' : finished ? 'focus' : preferences.islandIdle;
-  const expandedGeometry = surfaceHeight > COMPACT_HEIGHT;
+  const baseGeometry = islandGeometry(preferences.islandSize, identity === 'music' || identity === 'focus' || identity === 'balance', viewportWidth);
+  const geometry = { ...baseGeometry, expandedWidth: Math.min(baseGeometry.expandedWidth, view === 'settings' ? 360 : view === 'menu' ? 320 : baseGeometry.expandedWidth) };
+  const geometryRef = useRef(geometry); geometryRef.current = geometry;
+  const expandedGeometry = surfaceHeight > geometry.compactHeight || surfaceWidth > geometry.compactWidth;
+  const exiting = visibility.transition?.visible === false;
+  const available = visibility.visible && !exiting;
   const requested = phase !== 'compact' && phase !== 'collapsing';
   const failure = error || visibilityError || visibility.error;
 
@@ -100,28 +121,28 @@ export function DynamicIsland() {
   const schedule = useCallback((callback: () => void, delay: number, sequence: number) => {
     timers.current.push(setTimeout(() => { if (sequence === epoch.current) callback(); }, delay));
   }, []);
-  const resizeSurface = useCallback((next: number) => { height.current = next; setSurfaceHeight(next); }, []);
-  const resizeNative = useCallback(async (expanded: boolean, next = COMPACT_HEIGHT) => {
+  const resizeSurface = useCallback((next: number, nextWidth = width.current) => { height.current = next; width.current = nextWidth; setSurfaceHeight(next); setSurfaceWidth(nextWidth); }, []);
+  const resizeNative = useCallback(async (expanded: boolean, next = geometryRef.current.compactHeight, nextWidth = expanded ? geometryRef.current.expandedWidth : geometryRef.current.compactWidth) => {
     const sequence = ++resizeSequence.current;
-    await syncIslandSize(expanded, next + FRAME_PADDING);
+    await syncIslandSize(expanded, next + FRAME_PADDING, nextWidth + FRAME_PADDING);
     // A delayed reply must not replace the bounds of a newer successful resize.
     if (sequence > confirmedResizeSequence.current) {
       confirmedResizeSequence.current = sequence;
-      nativeHeight.current = expanded ? next : COMPACT_HEIGHT;
+      nativeHeight.current = next; nativeWidth.current = nextWidth;
     }
   }, []);
   const preserveNativeFrame = useCallback(() => {
     cancelWork();
     if (body.current) { body.current.style.transition = ''; body.current.style.opacity = ''; body.current.style.transform = ''; }
     resizingBlocked.current = true;
-    const expanded = nativeHeight.current > COMPACT_HEIGHT;
+    const expanded = nativeHeight.current > geometryRef.current.compactHeight || nativeWidth.current > geometryRef.current.compactWidth;
     requestedExpansion.current = expanded;
-    resizeSurface(nativeHeight.current);
+    resizeSurface(nativeHeight.current, nativeWidth.current);
     setBodyVisible(expanded);
     setPhase(expanded ? 'expanded' : 'compact');
     setError('Não foi possível ajustar a ilha. Tente recolher novamente.');
   }, [cancelWork, resizeSurface]);
-  const measure = useCallback(() => Math.min(MAX_HEIGHT, Math.max(HEADER_HEIGHT, Math.ceil((content.current?.scrollHeight || 0) + HEADER_HEIGHT + 16))), []);
+  const measure = useCallback(() => Math.min(MAX_HEIGHT, Math.max(HEADER_HEIGHT, Math.ceil((content.current?.scrollHeight || 0) + HEADER_HEIGHT + 8))), []);
 
   // Freeze only pixels from the outgoing body. It has no React handlers, IDs or
   // accessible controls; stores and the persistent header remain single owners.
@@ -201,14 +222,119 @@ export function DynamicIsland() {
     cancelWork();
     requestedExpansion.current = false;
     setBodyVisible(false);
-    resizeSurface(COMPACT_HEIGHT);
+    resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth);
     setPhase('compact');
     // The native worker owns visibility; a late size reply must never reveal it.
     void resizeNative(false).catch(() => {});
   }, [visibility.visible, cancelWork, resizeSurface, resizeNative]);
 
+  useEffect(() => {
+    let disposed = false;
+    const update = () => {
+      if (isTauri()) void readIslandAvailableWidth().then(value => { if (!disposed) setViewportWidth(value); }).catch(() => {});
+      else setViewportWidth(window.innerWidth);
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => { disposed = true; window.removeEventListener('resize', update); if (hoverTimer.current) clearTimeout(hoverTimer.current); if (leaveTimer.current) clearTimeout(leaveTimer.current); visibilityAnimation.current?.cancel(); };
+  }, []);
+
+  // Grow the OS frame first, but finish a compact identity shrink in CSS
+  // before shrinking the HWND; music ending must not clip the departing strip.
+  useEffect(() => {
+    if (requestedExpansion.current || !visibility.visible || phase !== 'compact') return;
+    const sequence = cancelWork();
+    const g = geometryRef.current;
+    const changing = width.current !== g.compactWidth || height.current !== g.compactHeight;
+    const grows = g.compactWidth > width.current || g.compactHeight > height.current;
+    void (async () => {
+      try {
+        if (grows) await resizeNative(false, Math.max(g.compactHeight, height.current), Math.max(g.compactWidth, width.current));
+        if (sequence !== epoch.current || requestedExpansion.current) return;
+        resizeSurface(g.compactHeight, g.compactWidth);
+        if (changing && !grows && !reduceMotion) schedule(() => {
+          void resizeNative(false, g.compactHeight, g.compactWidth).catch(() => { if (sequence === epoch.current) preserveNativeFrame(); });
+        }, 240, sequence);
+        else await resizeNative(false, g.compactHeight, g.compactWidth);
+      } catch { if (sequence === epoch.current) preserveNativeFrame(); }
+    })();
+  }, [geometry.compactHeight, geometry.compactWidth, cancelWork, resizeNative, resizeSurface, preserveNativeFrame, visibility.visible, phase, reduceMotion, schedule]);
+
+  useEffect(() => {
+    if (!requested && available && restoreCompactFocus.current) {
+      restoreCompactFocus.current = false;
+      expander.current?.focus({ preventScroll: true });
+    }
+  }, [requested, available]);
+
+  useEffect(() => {
+    if (requestedExpansion.current && phase === 'expanded') switchView(view, activity);
+  // A preference changes the measured width; the normal guarded transition owns it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geometry.expandedWidth]);
+
+  useLayoutEffect(() => {
+    const node = shell.current;
+    const intent = visibility.transition;
+    if (!node) return;
+    const current = getComputedStyle(node);
+    const from = { opacity: current.opacity, transform: current.transform === 'none' ? 'translateY(0px) scale(1)' : current.transform };
+    visibilityAnimation.current?.cancel();
+    visibilityAnimation.current = null;
+    if (!intent) {
+      // SW_SHOW precedes event delivery. Keep the hidden WebView transparent so
+      // its first native paint cannot flash an opaque compact surface.
+      node.style.opacity = visibility.visible ? '' : '0';
+      node.style.transform = visibility.visible ? '' : 'translateY(-10px) scale(.98)';
+      return;
+    }
+    if (!intent.visible) { if (hoverTimer.current) clearTimeout(hoverTimer.current); if (leaveTimer.current) clearTimeout(leaveTimer.current); }
+    const hidden = { opacity: '0', transform: 'translateY(-10px) scale(.98)' };
+    const shown = { opacity: '1', transform: 'translateY(0px) scale(1)' };
+    const animation = node.animate([intent.visible && from.opacity === '1' ? hidden : from, intent.visible ? shown : hidden], {
+      duration: reduceMotion ? 0 : Math.min(200, intent.durationMs), easing: 'cubic-bezier(.16,1,.3,1)', fill: 'forwards',
+    });
+    visibilityAnimation.current = animation;
+    void animation.finished.then(() => completeIslandVisibilityTransition(intent.generation)).catch(() => {});
+    return () => animation.cancel();
+  }, [visibility.visible, visibility.transition?.generation, visibility.transition?.visible, reduceMotion]);
+
+  // The OS may reveal while the pointer is already inside: no pointerenter is
+  // guaranteed after SW_SHOWNOACTIVATE, so reveal intent also schedules expansion.
+  useEffect(() => {
+    if (!available || !preferences.islandHoverExpand || visibility.reason !== 'reveal' || requestedExpansion.current) return;
+    const timer = setTimeout(() => { shouldFocusBody.current = false; beginOpen(active || paused || recordPending || media ? 'activity' : 'today'); }, reduceMotion ? 0 : 200);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibility.visible, visibility.reason, preferences.islandHoverExpand]);
+
+  function enterIsland() {
+    pointerInside.current = true;
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (!available || !preferences.islandHoverExpand || requestedExpansion.current) return;
+    hoverTimer.current = setTimeout(() => {
+      if (!pointerInside.current || requestedExpansion.current) return;
+      shouldFocusBody.current = false;
+      beginOpen(active || paused || recordPending || media ? 'activity' : 'today');
+    }, 120);
+  }
+
+  function leaveIsland() {
+    pointerInside.current = false;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    leaveTimer.current = setTimeout(() => {
+      if (pointerInside.current || keyboardOwned.current || !requestedExpansion.current) return;
+      // A draft, focused select or slider remains available while typing.
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused.matches('input, select, textarea') && shell.current?.contains(focused) && document.hasFocus()) return;
+      closeIsland();
+    }, 420);
+  }
+
   function beginOpen(nextView: IslandView, nextActivity = defaultActivity) {
-    if (!visibility.visible) return;
+    if (!available) return;
     notifyActivity();
     const presentation = capturePresentation();
     const sequence = cancelWork();
@@ -217,7 +343,7 @@ export function DynamicIsland() {
     requestedExpansion.current = true;
     setError('');
     setMenuIndex(0);
-    focusActivityControl.current = false;
+    focusActivityControl.current = shouldFocusBody.current && nextView === 'activity';
     setBodyVisible(false);
     pendingTransition.current = { epoch: sequence, view: nextView, kind: 'open' };
     setActivity(nextActivity);
@@ -226,13 +352,13 @@ export function DynamicIsland() {
   }
 
   function switchView(nextView: IslandView, nextActivity = activity) {
-    if (!requestedExpansion.current || height.current === COMPACT_HEIGHT) { beginOpen(nextView, nextActivity); return; }
+    if (!requestedExpansion.current || height.current === geometryRef.current.compactHeight) { beginOpen(nextView, nextActivity); return; }
     const presentation = capturePresentation();
     const sequence = cancelWork();
     installPresentation(presentation);
     prepareBody();
     notifyActivity();
-    focusActivityControl.current = nextView === 'activity';
+    focusActivityControl.current = shouldFocusBody.current && nextView === 'activity';
     setBodyVisible(false);
     pendingTransition.current = { epoch: sequence, view: nextView, kind: 'switch' };
     setActivity(nextActivity);
@@ -249,8 +375,8 @@ export function DynamicIsland() {
     requestedExpansion.current = false;
     setBodyVisible(false);
     setPhase('collapsing');
-    if (restore && visibility.visible) (restoreTrigger.current === 'menu' ? menuTrigger : expander).current?.focus({ preventScroll: true });
-    schedule(() => resizeSurface(COMPACT_HEIGHT), reduceMotion || openHeight === COMPACT_HEIGHT ? 0 : 90, sequence);
+    restoreCompactFocus.current = restore && visibility.visible;
+    schedule(() => resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth), reduceMotion || openHeight === geometryRef.current.compactHeight ? 0 : 90, sequence);
     schedule(() => {
       void resizeNative(false).then(() => {
         if (sequence === epoch.current) setPhase('compact');
@@ -260,21 +386,20 @@ export function DynamicIsland() {
         requestedExpansion.current = true;
         resizingBlocked.current = true;
         if (body.current) { body.current.style.transition = ''; body.current.style.opacity = ''; body.current.style.transform = ''; }
-        resizeSurface(nativeHeight.current);
+        resizeSurface(nativeHeight.current, nativeWidth.current);
         setBodyVisible(true);
         setPhase('expanded');
         setError('Não foi possível recolher a ilha. Tente novamente.');
       });
-    }, reduceMotion || openHeight === COMPACT_HEIGHT ? 0 : 270, sequence);
+    }, reduceMotion || openHeight === geometryRef.current.compactHeight ? 0 : 270, sequence);
   }
 
   function toggleExpansion() {
-    restoreTrigger.current = 'expand';
-    if (requestedExpansion.current) closeIsland(); else beginOpen('activity');
+    if (requestedExpansion.current) closeIsland(); else beginOpen(active || paused || recordPending || media ? 'activity' : 'today');
   }
 
   function openMenu() {
-    restoreTrigger.current = 'menu';
+    shouldFocusBody.current = true;
     setMenuIndex(0);
     if (requestedExpansion.current && view === 'menu') closeIsland(true);
     else if (requestedExpansion.current) switchView('menu');
@@ -292,10 +417,10 @@ export function DynamicIsland() {
     void (async () => {
       try {
         // The body is already measurable but inert; enlarge the OS frame first.
-        if (nextHeight > nativeHeight.current) {
-          await resizeNative(true, nextHeight);
-          preparedHeight = nextHeight;
-        }
+        // Always pass through the FIFO barrier: an older shrink may already be
+        // in flight even if the last confirmed frame still appears large enough.
+        await resizeNative(true, Math.max(nextHeight, nativeHeight.current), Math.max(geometryRef.current.expandedWidth, nativeWidth.current));
+        preparedHeight = nativeHeight.current;
         if (sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) {
           if (!requestedExpansion.current) void resizeNative(false).catch(() => {});
           return;
@@ -303,16 +428,16 @@ export function DynamicIsland() {
         // Metadata/errors may change while IPC is pending. Use their current
         // geometry rather than clipping the new content into the first sample.
         const currentHeight = measure();
-        if (currentHeight > nativeHeight.current) {
-          await resizeNative(true, currentHeight);
-          preparedHeight = currentHeight;
+        if (currentHeight > nativeHeight.current || geometryRef.current.expandedWidth > nativeWidth.current) {
+          await resizeNative(true, Math.max(currentHeight, nativeHeight.current), Math.max(geometryRef.current.expandedWidth, nativeWidth.current));
+          preparedHeight = nativeHeight.current;
         }
         if (sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) {
           if (!requestedExpansion.current) void resizeNative(false).catch(() => {});
           return;
         }
         nextHeight = currentHeight;
-        resizeSurface(nextHeight);
+        resizeSurface(nextHeight, geometryRef.current.expandedWidth);
         setPhase(transition.kind === 'open' ? 'expanding' : 'switching');
         const enter = () => {
           if (body.current) {
@@ -342,28 +467,28 @@ export function DynamicIsland() {
         if (body.current) { body.current.style.transition = ''; body.current.style.opacity = ''; body.current.style.transform = ''; }
         // A failed larger view may leave the previous native frame expanded.
         // Keep that frame occupied until a compact resize actually succeeds.
-        if (preparedHeight > COMPACT_HEIGHT) {
-          resizeSurface(preparedHeight);
+        if (preparedHeight > geometryRef.current.compactHeight || nativeWidth.current > geometryRef.current.compactWidth) {
+          resizeSurface(nativeHeight.current, nativeWidth.current);
           setBodyVisible(true);
           setPhase('collapsing');
         }
         try {
           await resizeNative(false);
           if (sequence !== epoch.current) return;
-          resizeSurface(COMPACT_HEIGHT);
+          resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth);
           setBodyVisible(false);
           setPhase('compact');
         } catch {
           if (sequence !== epoch.current) return;
-          if (preparedHeight > COMPACT_HEIGHT) {
+          if (preparedHeight > geometryRef.current.compactHeight || nativeWidth.current > geometryRef.current.compactWidth) {
             requestedExpansion.current = true;
             resizingBlocked.current = true;
-            resizeSurface(preparedHeight);
+            resizeSurface(nativeHeight.current, nativeWidth.current);
             setBodyVisible(true);
             setPhase('expanded');
             setError('Não foi possível ajustar a ilha. Tente recolher novamente.');
           } else {
-            resizeSurface(COMPACT_HEIGHT);
+            resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth);
             setBodyVisible(false);
             setPhase('compact');
           }
@@ -385,7 +510,7 @@ export function DynamicIsland() {
         try {
           if (growing) await resizeNative(true, next);
           if (disposed || sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) return;
-          resizeSurface(next);
+          resizeSurface(next, geometryRef.current.expandedWidth);
           if (!growing) schedule(() => {
             if (layout !== layoutRevision.current || !requestedExpansion.current || height.current !== next) return;
             void resizeNative(true, next).catch(() => {
@@ -400,9 +525,10 @@ export function DynamicIsland() {
   }, [phase, visibility.visible, reduceMotion, measure, resizeSurface, resizeNative, preserveNativeFrame, schedule]);
 
   useEffect(() => {
-    if (!bodyVisible || !visibility.visible) return;
+    if (!bodyVisible || !available || !shouldFocusBody.current) return;
+    shouldFocusBody.current = false;
     if (view === 'menu') menuItems.current[menuIndex]?.focus();
-    else if (view === 'settings') settingsFirst.current?.focus();
+    else if (view === 'settings') body.current?.querySelector<HTMLButtonElement>('.island-appearance button')?.focus({ preventScroll: true });
     else if (view === 'today') body.current?.querySelector<HTMLButtonElement>('.island-today [role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
     else if (focusActivityControl.current) {
       focusActivityControl.current = false;
@@ -449,63 +575,72 @@ export function DynamicIsland() {
     : identity === 'focus' ? selectedTask?.title || (finished || recordPending ? 'Sessão concluída' : modeName)
     : identity === 'balance' ? finance.accounts.length ? formatCentsToBRL(finance.consolidated.total_balance_cents) : 'Suas finanças'
     : identity === 'minimal' ? 'Pedro' : currentTime;
-  const subtitle = identity === 'music' ? media?.artist || 'Sua trilha do dia'
-    : identity === 'focus' ? `${formatTimer(focus.remainingSeconds)} · ${status}`
-    : identity === 'balance' ? 'Seu dinheiro, com clareza' : identity === 'minimal' ? 'Seu dia, por perto' : 'Pedro · um passo de cada vez';
-  const styles = { '--widget-opacity': preferences.islandOpacity, '--island-height': `${surfaceHeight}px` } as CSSProperties;
+  const hasActivity = identity === 'music' || identity === 'focus' || identity === 'balance';
+  const styles = { '--widget-opacity': preferences.islandOpacity, '--island-height': `${surfaceHeight}px`,
+    '--island-width': `${surfaceWidth}px`, '--island-content-width': `${geometry.expandedWidth - 16}px` } as CSSProperties;
+  const currentTab = view === 'today' ? 'today' : view === 'activity' ? activity : null;
+  const tabs = [{ id: 'today', label: 'Hoje', Icon: CalendarDays }, { id: 'focus', label: 'Foco', Icon: Timer }, { id: 'music', label: 'Música', Icon: Music2 }] as const;
 
-  return <div className="desktop-widget-shell island-shell" style={styles} data-reduce-motion={reduceMotion}
-    data-island-visible={visibility.visible} aria-hidden={!visibility.visible} inert={!visibility.visible || undefined}
-    onFocusCapture={notifyActivity} onKeyDownCapture={notifyActivity} onPointerDownCapture={notifyActivity} onPointerMoveCapture={notifyActivity}>
-    <section className={`pedro-island${expandedGeometry ? ' is-expanded' : ''}`} data-phase={phase} data-view={view} aria-label="Ilha do Pedro"
+  return <div ref={shell} className="desktop-widget-shell island-shell" style={styles} data-reduce-motion={reduceMotion}
+    data-island-tone={preferences.islandTone} data-island-visible={visibility.visible} data-visibility-intent={visibility.transition?.visible}
+    aria-hidden={!available} inert={!available || undefined}
+    onFocusCapture={event => { notifyActivity(); if (event.target instanceof HTMLElement && event.target.matches(':focus-visible')) keyboardOwned.current = true; }}
+    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { keyboardOwned.current = false; if (!pointerInside.current) leaveIsland(); } }}
+    onKeyDownCapture={event => { keyboardOwned.current = true; notifyActivity(); if (event.key === 'Tab' && !requestedExpansion.current) { shouldFocusBody.current = true; beginOpen('today'); } }}
+    onPointerDownCapture={() => { keyboardOwned.current = false; notifyActivity(); }} onPointerMoveCapture={notifyActivity}>
+    <section className={`pedro-island${expandedGeometry ? ' is-expanded' : ''}`} data-phase={phase} data-view={view}
+      data-has-activity={hasActivity} aria-label="Ilha do Pedro" onPointerEnter={enterIsland} onPointerLeave={leaveIsland}
       onContextMenu={event => { event.preventDefault(); openMenu(); }}
       onKeyDown={event => {
         if (event.key === 'F10' && event.shiftKey) { event.preventDefault(); openMenu(); }
-        if (event.key === 'Escape' && requestedExpansion.current) {
-          event.preventDefault();
-          if (view === 'settings' || view === 'today') switchView('menu'); else closeIsland(true);
-        }
+        if (event.key === 'Escape' && requestedExpansion.current) { event.preventDefault(); if (view === 'settings' || view === 'menu') switchView(active || paused || recordPending || media ? 'activity' : 'today'); else closeIsland(true); }
       }}>
-      <header className="island-header">
-        <button className="island-context" type="button" onClick={toggleExpansion} aria-expanded={requested} aria-controls="island-details" aria-label={`${requested ? 'Recolher' : 'Expandir'} atividade: ${title}`} title={title}>
-          <span className={`island-identity-mark${identity === 'music' ? ' is-music' : ''}`} aria-hidden="true">
-            {identity === 'music' && media?.artwork && failedArtwork !== media.artwork ? <img src={media.artwork} alt="" onError={() => setFailedArtwork(media.artwork)} />
-              : identity === 'music' ? <Music2 size={17} /> : identity === 'focus' ? <Timer size={17} /> : identity === 'balance' ? <Wallet size={17} /> : <Sparkles size={17} />}
-          </span>
-          <span className="island-identity-text"><strong title={title}>{title}</strong><span title={subtitle}>{subtitle}</span></span>
-          {(active || identity === 'music') && <span className={`island-status-dot${active || presentation === 'ready' && media?.playbackStatus === 'playing' ? ' is-active' : ''}${presentation === 'updating' && identity === 'music' ? ' is-updating' : ''}`} aria-label={identity === 'music' ? presentation === 'updating' ? 'Atualizando faixa' : media?.playbackStatus === 'playing' ? 'Em reprodução' : 'Reprodução pausada' : status} />}
-        </button>
-        <div className="island-header-actions">
-          <button ref={menuTrigger} className={`widget-icon-button island-menu-trigger${failure ? ' has-error' : ''}`} type="button" onClick={openMenu} aria-label="Abrir menu do Pedro" title={failure || 'Menu do Pedro'} aria-haspopup="menu" aria-expanded={requested && view === 'menu'} aria-controls="island-menu"><Ellipsis size={18} /></button>
-          <button ref={expander} className="widget-icon-button island-expander" type="button" onClick={toggleExpansion} aria-expanded={requested} aria-controls="island-details" aria-label={requested ? 'Recolher ilha' : 'Expandir ilha'} title={requested ? 'Recolher ilha' : 'Expandir ilha'}><ChevronDown size={16} /></button>
+      <button ref={expander} className="island-compact-trigger" type="button" aria-expanded={requested}
+        aria-controls="island-details" aria-label={`Expandir ilha: ${title}`} title={title}
+        tabIndex={requested ? -1 : 0} aria-hidden={requested} inert={requested || undefined}
+        onClick={event => { shouldFocusBody.current = event.detail === 0; toggleExpansion(); }}>
+        <span className={`island-compact-mark${identity === 'music' ? ' is-music' : ''}`} aria-hidden="true">
+          {identity === 'music' && media?.artwork && failedArtwork !== media.artwork ? <img src={media.artwork} alt="" onError={() => setFailedArtwork(media.artwork)} />
+            : identity === 'music' ? <Music2 size={14} /> : identity === 'focus' ? <Timer size={14} /> : identity === 'balance' ? <Wallet size={14} /> : <span className="island-pedro-monogram">p<span /></span>}
+        </span>
+        {identity !== 'minimal' && <span className="island-compact-title">{title}</span>}
+        {identity === 'focus' ? <span className="island-compact-time">{formatTimer(focus.remainingSeconds)}</span>
+          : identity === 'music' ? <span className={`island-equalizer${media?.playbackStatus === 'playing' && presentation === 'ready' ? ' is-playing' : ''}`} aria-hidden="true"><i /><i /><i /></span>
+          : <ChevronDown size={11} aria-hidden="true" />}
+      </button>
+      <header className="island-toolbar" aria-hidden={!requested} inert={!requested || undefined}>
+        <button ref={menuTrigger} className={`island-toolbar-brand${failure ? ' has-error' : ''}`} type="button" onClick={openMenu}
+          aria-label="Abrir menu do Pedro" title={failure || 'Menu do Pedro'} aria-haspopup="menu" aria-expanded={requested && view === 'menu'} aria-controls="island-menu"><span className="island-pedro-monogram">p<span /></span></button>
+        <div className="island-context-tabs" role="tablist" aria-label="Contexto da ilha">
+          {tabs.map(({ id, label, Icon }, index) => <button key={id} type="button" role="tab" aria-selected={currentTab === id}
+            tabIndex={currentTab === id || currentTab === null && index === 0 ? 0 : -1} aria-label={label} title={label}
+            aria-controls="island-details" onClick={event => { shouldFocusBody.current = event.detail === 0; switchView(id === 'today' ? 'today' : 'activity', id === 'music' ? 'music' : 'focus'); }}
+            onKeyDown={event => { const move = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0; if (!move && event.key !== 'Home' && event.key !== 'End') return; event.preventDefault(); const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + move + tabs.length) % tabs.length; const item = tabs[target]; shouldFocusBody.current = false; switchView(item.id === 'today' ? 'today' : 'activity', item.id === 'music' ? 'music' : 'focus'); (event.currentTarget.parentElement?.children[target] as HTMLButtonElement)?.focus({ preventScroll: true }); }}>
+            <Icon size={13} aria-hidden="true" /><span>{label}</span>
+          </button>)}
+        </div>
+        <div className="island-toolbar-actions">
+          <button className="widget-icon-button" type="button" onClick={() => { void openPage('home'); }} aria-label="Abrir painel" title="Abrir painel"><ArrowUpRight size={13} /></button>
+          <button className="widget-icon-button island-appearance-trigger" type="button" onClick={event => { shouldFocusBody.current = event.detail === 0; switchView(view === 'settings' ? (media || active || paused ? 'activity' : 'today') : 'settings'); }} aria-label="Aparência da ilha" title="Aparência" aria-expanded={requested && view === 'settings'} aria-controls="island-details"><Palette size={13} /></button>
+          <button className="widget-icon-button island-collapse" type="button" onClick={() => closeIsland(true)} aria-label="Recolher ilha" title="Recolher ilha"><ChevronDown size={13} /></button>
         </div>
       </header>
-
       <div id="island-details" ref={body} className={`island-details${bodyVisible ? ' is-visible' : ''}`} aria-hidden={!bodyVisible} inert={!bodyVisible || undefined}>
         <div className="island-details-content" ref={content}>
-        <div hidden={view !== 'today'} inert={view !== 'today' || undefined} aria-hidden={view !== 'today' || undefined}>
-          <div className="island-layer-heading island-today-heading"><button className="widget-icon-button" type="button" onClick={() => switchView('menu')} aria-label="Voltar ao menu"><ArrowLeft size={14} /></button><strong>Hoje</strong></div>
-          <IslandToday onOpenPanel={() => { void openPage('routine'); }} />
-        </div>
-        {view === 'menu' ? <div id="island-menu" role="menu" aria-label="Menu do Pedro" className="island-menu" onKeyDown={menuKeys}>
-          {menu.map((item, index) => <button key={item.label} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem" tabIndex={menuIndex === index ? 0 : -1} onFocus={() => setMenuIndex(index)} onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index > 0 && index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
-        </div> : view === 'settings' ? <div className="island-quick-settings" role="group" aria-label="Ajustes rápidos">
-          <div className="island-layer-heading"><button className="widget-icon-button" type="button" onClick={() => switchView('menu')} aria-label="Voltar ao menu"><ArrowLeft size={14} /></button><strong>Ajustes rápidos</strong></div>
-          <fieldset className="island-preference"><legend>Tema</legend><div className="island-segments">{([{ value: 'system', label: 'Sistema' }, { value: 'dark', label: 'Escuro' }, { value: 'light', label: 'Claro' }] as const).map((item, index) => <button ref={index === 0 ? settingsFirst : undefined} key={item.value} type="button" aria-pressed={preferences.theme === item.value} onClick={() => preferences.updatePreferences({ theme: item.value })}>{item.label}</button>)}</div></fieldset>
-          <fieldset className="island-preference"><legend>Presença da ilha</legend><div className="island-segments">{([{ value: 'fixed', label: 'Fixa' }, { value: 'hybrid', label: 'Híbrida' }] as const).map(item => <button key={item.value} type="button" aria-pressed={preferences.islandVisibility === item.value} onClick={() => preferences.updatePreferences({ islandVisibility: item.value })}>{item.label}</button>)}</div><p>{preferences.islandVisibility === 'hybrid' ? `Oculta após ${preferences.islandHideDelay} segundos ou em tela cheia. Aproxime o mouse do lugar da ilha para revelar.` : 'Permanece disponível no topo da tela.'}</p></fieldset>
-          <label className="island-preference-toggle"><span>Barra de atalhos no desktop</span><input type="checkbox" checked={preferences.dockEnabled} onChange={event => preferences.updatePreferences({ dockEnabled: event.target.checked })} /></label>
-          <MusicVolume />
-          <button className="island-settings-link" type="button" onClick={() => openPage('appearance')}>Todas as opções de aparência<ArrowUpRight size={12} /></button>
-        </div> : view !== 'today' ? <>
-          {activity === 'music' ? <div className="island-music-body"><MusicPlayer compact showIdentity={false} showVolume={false} /></div> : <div className="island-focus-block">
+          <div hidden={view !== 'today'} inert={view !== 'today' || undefined} aria-hidden={view !== 'today' || undefined}>
+            <IslandToday onOpenPanel={() => { void openPage('routine'); }} />
+          </div>
+          {view === 'menu' ? <div id="island-menu" role="menu" aria-label="Menu do Pedro" className="island-menu" onKeyDown={menuKeys}>
+            {menu.map((item, index) => <button key={item.label} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem" tabIndex={menuIndex === index ? 0 : -1} onFocus={() => setMenuIndex(index)} onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index > 0 && index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
+          </div> : view === 'settings' ? <div className="island-appearance-popover"><IslandAppearance onOpenFull={() => { void openPage('appearance'); }} onClose={() => switchView(media || active || paused ? 'activity' : 'today')} /></div>
+            : view === 'activity' ? activity === 'music' ? <div className="island-music-body"><MusicPlayer layout="island" /></div>
+            : <div className="island-focus-block" aria-label={status}>
             <div className="island-focus-top"><div className="island-mode-picker" role="group" aria-label="Tipo de sessão"><button type="button" aria-pressed={focus.currentMode === 'focus'} onClick={() => focus.setPomodoroMode('focus')} disabled={active || paused || recordPending}>Foco</button><button type="button" aria-pressed={focus.currentMode === 'break'} onClick={() => focus.setPomodoroMode('break')} disabled={active || paused || recordPending}><Coffee size={12} />Pausa</button></div><span className="island-clock">{currentTime}</span></div>
             <div className="island-timer-line"><div><span className="island-timer" role="timer" aria-label={`Tempo restante: ${formatTimer(focus.remainingSeconds)}`}>{formatTimer(focus.remainingSeconds)}</span><p className="island-task-name" title={selectedTask?.title}>{saveFailed ? 'Tente registrar novamente pelo botão ao lado.' : selectedTask?.title || (focus.currentMode === 'break' ? 'Respire. Você merece uma pausa.' : 'Escolha uma tarefa ou apenas comece.')}</p></div><div className="island-timer-actions"><button className="island-play-button" type="button" onClick={controlTimer} disabled={saving || (saveFailed && focus.isLoading)} aria-label={saveFailed ? 'Tentar registrar sessão novamente' : active ? 'Pausar sessão' : paused ? 'Continuar sessão' : 'Iniciar sessão'} title={saveFailed ? 'Tentar registrar novamente' : active ? 'Pausar' : paused ? 'Continuar' : 'Iniciar'}>{saveFailed ? <RefreshCw size={17} /> : active ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button><button className="widget-icon-button" type="button" onClick={focus.resetPomodoro} disabled={recordPending} aria-label="Reiniciar sessão" title="Reiniciar"><RotateCcw size={15} /></button></div></div>
             <div className="island-progress" role="progressbar" aria-label="Progresso da sessão" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><span style={{ transform: `scaleX(${progress})` }} /></div>
             <IslandTaskSelection />
-          </div>}
-          <footer className="island-summary"><button type="button" onClick={() => switchView('activity', activity === 'music' ? 'focus' : 'music')}>{activity === 'music' ? <Timer size={12} /> : <Music2 size={12} />}<span>{activity === 'music' ? 'Ver foco' : 'Ver música'}</span></button><button type="button" onClick={() => activity === 'music' ? void openPage('music') : switchView('today')}><CircleCheck size={12} /><span>{activity === 'focus' ? 'Ver meu dia' : 'Abrir painel'}</span>{activity === 'music' ? <ArrowUpRight size={12} /> : <ChevronDown size={12} />}</button></footer>
-        </> : null}
-        {failure && <div className="island-error" role="alert"><span>{failure}</span><button type="button" onClick={() => { setError(''); closeIsland(); }} aria-label="Tentar recolher ilha novamente"><RefreshCw size={13} /></button></div>}
+          </div> : null}
+          {failure && <div className="island-error" role="alert"><span>{failure}</span><button type="button" onClick={() => { setError(''); closeIsland(); }} aria-label="Tentar recolher ilha novamente"><RefreshCw size={13} /></button></div>}
         </div>
       </div>
       <div ref={outgoing} className="island-outgoing-layer" hidden aria-hidden="true" inert />

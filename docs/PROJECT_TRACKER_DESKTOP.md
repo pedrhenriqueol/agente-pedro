@@ -19,6 +19,9 @@
 | F08 | Inicialização resiliente e diagnóstico local | Alta | Builder/estados nativos | Abertura confirmada pelo usuário | Corrida `DesktopMenuState` corrigida, estados pré-gerenciados e panic registrado |
 | F09 | Revelação por proximidade e dock sem área fantasma | Alta | Cursor/HWND/controle serializado | Corrigido; revalidação Windows pendente | Região compacta completa, OFF nativo + click-through e último pedido confirmado |
 | F10 | Hoje contextual e tarefa do foco na ilha | Alta | Rotina/persistência existentes | Implementado; QA Windows pendente | Criar/concluir tarefa, registrar hábito e selecionar tarefa sem abrir painel |
+| F11 | Ilha mínima, hover, toolbar e player horizontal | Alta | Geometria variável/presença | Implementado; QA Windows pendente | Repouso96px, atividade280px, abertura480/560/640px e entrada/saída coordenadas |
+| F12 | Agenda local e aparência contextual | Alta | Stores/preferências | Implementado; QA Windows pendente | Calendário por data real, cores, tamanho, opacidade e teclado |
+| F13 | Controles nos cantos superiores | Alta | WebViews próprias/controller | Implementado; QA Windows pendente | Frames pequenos, popups medidos, desligamento nativo e hide conjunto |
 
 ## 3. Riscos e bloqueios
 
@@ -37,3 +40,5 @@ Validação gráfica nativa depende de máquina Windows. A nuvem permite compila
 - Commit da correção nativa de hover/dock: `f7044f8`. AGENTS.md, skills e templates do usuário seguem preservados.
 - Commit de música: `cf65c73`; painel/integração: `46db1b2`; ilha: `f0802ef`.
 - Base preservada: commit do usuário `79f071f`, incluindo AGENTS.md, skills e templates sem alterações nesta entrega. SQLite, esquema, cálculos monetários e armazenamento dos registros não foram modificados.
+
+A reformulação de 2026-10-13 está descrita em [DESIGN_REPORT_ISLAND_REDESIGN.md](DESIGN_REPORT_ISLAND_REDESIGN.md) e [SYSTEM_DESIGN_ISLAND_REDESIGN.md](SYSTEM_DESIGN_ISLAND_REDESIGN.md). As contagens anteriores acima documentam suas entregas; a validação atual está no relatório da reformulação. As duas novas janelas são do Pedro e não alteram o Shell do Windows.

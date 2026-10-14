@@ -1,0 +1,33 @@
+/* Shared preferences for the island and the desktop's small corner controls. */
+.settings-page .switch > span { pointer-events: none; }
+.settings-island-sizes .choice { flex: 1; justify-content: center; min-width: 0; }
+.settings-page .settings-redesign-accents, .settings-page .settings-surface-tones { flex-wrap: wrap; }
+.settings-redesign-accents .settings-custom-color-mark { background: conic-gradient(#ff99b5, #f5b954, #10b981, #92c2ff, #bca7ff, #ff99b5); }
+.settings-custom-color { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 17px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 11px; background: var(--raised); }
+.settings-custom-color > label { font-size: 12px; margin-right: auto; }
+.settings-custom-color > input { flex: 0 0 35px; width: 35px; height: 29px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); cursor: pointer; }
+.settings-custom-color > output { font-size: 11px; font-family: 'Cascadia Code', Consolas, monospace; color: var(--muted); }
+.settings-custom-color > .settings-help { flex-basis: 100%; margin: 0; font-size: 11px; }
+.settings-preview-desktop.settings-redesign-preview { --preview-surface: var(--surface); --preview-raised: var(--raised); --preview-line: var(--line); --preview-expanded-width: 93%; position: relative; padding-top: 0; overflow: hidden; }
+.settings-redesign-preview[data-island-size='small'] { --preview-expanded-width: 85%; }
+.settings-redesign-preview[data-island-size='large'] { --preview-expanded-width: 100%; }
+.settings-redesign-preview[data-island-tone='midnight'] { --preview-surface: #101725; --preview-raised: #172131; --preview-line: #28384e; }
+.settings-redesign-preview[data-island-tone='emerald'] { --preview-surface: #0d1a18; --preview-raised: #142621; --preview-line: #254038; }
+:root[data-theme='light'] .settings-redesign-preview[data-island-tone='midnight'] { --preview-surface: #f3f6ff; --preview-raised: #e6ecf8; --preview-line: #cbd5e7; }
+:root[data-theme='light'] .settings-redesign-preview[data-island-tone='emerald'] { --preview-surface: #f1faf5; --preview-raised: #e1f0e7; --preview-line: #c5ddcf; }
+.settings-redesign-preview .settings-preview-island { gap: 6px; width: 96px; max-width: 100%; min-height: 24px; height: 24px; padding: 0 7px; border-top: 0; border-radius: 0 0 10px 10px; margin: 0 auto; background: color-mix(in srgb, var(--preview-surface) calc(var(--settings-preview-opacity) * 100%), transparent); border-color: var(--preview-line); box-shadow: 0 4px 8px #0002; }
+.settings-redesign-preview .settings-preview-island[data-has-activity='true'] { width: min(280px, 100%); height: 30px; min-height: 30px; }
+.settings-redesign-preview[data-top-controls='true'] .settings-preview-island[data-has-activity='true'] { max-width: calc(100% - 66px); }
+.settings-preview-monogram { position: relative; display: block; flex: 0 0 12px; color: var(--accent); font-size: 17px; font-weight: 750; line-height: 1; padding-bottom: 2px; }
+.settings-preview-monogram > span { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: currentColor; bottom: 2px; right: 0; }
+.settings-redesign-preview .settings-preview-context { justify-content: center; gap: 5px; font-size: 9px; }
+.settings-redesign-preview .settings-preview-artwork { width: 19px; height: 19px; border-radius: 5px; }
+.settings-redesign-preview .settings-preview-context:has(.settings-preview-artwork) ~ svg { display: none; }
+.settings-redesign-preview .settings-preview-island:has(.settings-preview-artwork) > .settings-preview-monogram { display: none; }
+.settings-redesign-preview .settings-preview-corners { display: flex; align-items: flex-start; justify-content: space-between; position: absolute; inset: 0 0 auto; pointer-events: none; }
+.settings-preview-corners > span { display: flex; align-items: center; justify-content: center; gap: 7px; height: 21px; padding: 0 7px; background: color-mix(in srgb, var(--preview-surface) calc(var(--settings-preview-opacity) * 100%), transparent); color: var(--muted); border-bottom: 1px solid var(--preview-line); }
+.settings-preview-corners > span:first-child { border-radius: 0 0 9px 0; }
+.settings-preview-corners > span:last-child { border-radius: 0 0 0 9px; }
+.settings-redesign-preview .settings-preview-activity { width: var(--preview-expanded-width); margin-inline: auto; border-color: var(--preview-line); background: var(--preview-raised); }
+.settings-redesign-preview .settings-preview-artwork.is-large { width: 46px; height: 46px; border-radius: 10px; }
+@media (max-width: 640px) { .settings-island-sizes .choice { padding-inline: 9px; }.settings-custom-color { gap: 9px; } }

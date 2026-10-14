@@ -45,7 +45,7 @@ function environment({ native = true, initial = snapshot() } = {}) {
   let invoke = async (command, args) => {
     if (command === 'island_visibility_snapshot') return initial;
     if (command === 'configure_island_visibility') return snapshot({ ...args, revision: initial.revision + 1 });
-    if (command === 'island_activity') return;
+    if (command === 'island_activity' || command === 'complete_island_visibility_transition') return;
     throw new Error(`IPC inesperado: ${command}`);
   };
   class ClockDate extends Date {
@@ -97,6 +97,27 @@ test('Navegador mantém a ilha visível e informa suporte indisponível sem acio
     assert.equal(env.calls.length, 0);
     assert.equal(env.listeners.size, 0);
   } finally { close(); close(); }
+});
+
+test('A saída animada mantém o HWND confirmado até o ack e ignora um evento antigo após a reversão', async () => {
+  const env = environment();
+  const close = await env.initializeIslandVisibility();
+  try {
+    env.emit(snapshot({ revision: 10, mode: 'hybrid', reason: 'idle', visible: true,
+      transition: { generation: 7, visible: false, durationMs: 180 } }));
+    const exit = env.useIslandVisibilityStore.getState().snapshot;
+    assert.equal(exit.visible, true, 'O HWND existe enquanto a saída anima');
+    assert.equal(exit.transition.visible, false);
+    await env.completeIslandVisibilityTransition(7);
+    assert.deepEqual(plain(env.calls.at(-1)), { command: 'complete_island_visibility_transition', args: { generation: 7 } });
+    assert.equal(env.useIslandVisibilityStore.getState().snapshot.visible, true, 'O wrapper não inventa uma confirmação nativa');
+    env.emit(snapshot({ revision: 12, mode: 'hybrid', reason: 'reveal', visible: true,
+      transition: { generation: 8, visible: true, durationMs: 200 } }));
+    env.emit(snapshot({ revision: 11, mode: 'hybrid', reason: 'idle', visible: false, transition: null }));
+    const reversed = env.useIslandVisibilityStore.getState().snapshot;
+    assert.equal(reversed.visible, true);
+    assert.equal(reversed.transition.generation, 8);
+  } finally { close(); }
 });
 
 test('Snapshot inicial atrasado não torna visível a ilha já ocultada por uma revisão mais recente', async () => {

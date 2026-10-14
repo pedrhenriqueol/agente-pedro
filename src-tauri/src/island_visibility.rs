@@ -29,6 +29,15 @@ struct Observation {
     near_island: bool,
     in_reveal_region: bool,
     fullscreen: bool,
+    control_interaction: bool,
+}
+
+impl Observation {
+    fn with_controls(mut self, pointer_inside_visible_control: bool) -> Self {
+        self.near_island |= pointer_inside_visible_control;
+        self.control_interaction = pointer_inside_visible_control;
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -84,6 +93,19 @@ impl VisibilityPolicy {
         }
     }
 
+    fn cancel_idle_exit(&mut self, near_island: bool, now_ms: u64) {
+        // The window is still visible during its exit animation. A genuine
+        // return to the surface reverses an idle exit before native hiding.
+        // Fullscreen exits keep the leave-and-return protection below.
+        if !self.visible && near_island && self.reason == VisibilityReason::Idle {
+            self.visible = true;
+            self.reason = VisibilityReason::Reveal;
+            self.last_activity_ms = now_ms;
+            self.reveal_armed = false;
+            self.reveal_entered_ms = None;
+        }
+    }
+
     fn hide(&mut self, observation: Observation, reason: VisibilityReason) {
         self.visible = false;
         self.reason = reason;
@@ -103,6 +125,12 @@ impl VisibilityPolicy {
             self.fullscreen_reveal = false;
         }
         if self.visible {
+            // A visible top control is another intentional way to interact.
+            // Preserve fullscreen's identity while moving between controls and
+            // the center, then apply the ordinary inactivity deadline.
+            if observation.control_interaction && observation.fullscreen {
+                self.fullscreen_reveal = true;
+            }
             if observation.fullscreen && !self.fullscreen_reveal {
                 self.hide(observation, VisibilityReason::Fullscreen);
             } else {
@@ -160,7 +188,19 @@ impl Bounds {
     }
 }
 
-fn pointer_regions(window: Bounds, monitor: Bounds, scale: f64) -> (Bounds, Bounds) {
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CompactFrame {
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Default for CompactFrame {
+    fn default() -> Self {
+        Self { width: 120.0, height: 48.0 }
+    }
+}
+
+fn pointer_regions(window: Bounds, monitor: Bounds, scale: f64, compact: CompactFrame) -> (Bounds, Bounds) {
     // The transparent frame contains 12 logical pixels of shadow; a 6px
     // tolerance keeps nearby pointer movement from causing an abrupt hide.
     let inset = (6.0 * scale).round() as i32;
@@ -175,11 +215,13 @@ fn pointer_regions(window: Bounds, monitor: Bounds, scale: f64) -> (Bounds, Boun
     // follows work-area positioning (e.g. a top taskbar), not monitor.top alone.
     // An expanded last rect must not create a tall reveal target over apps.
     let proximity = (12.0 * scale).round() as i32;
-    let compact_height = (72.0 * scale).round() as i32;
+    let compact_height = (compact.height * scale).round() as i32;
+    let compact_width = (compact.width * scale).round() as i32;
+    let compact_left = window.left + ((window.right - window.left) - compact_width) / 2;
     let reveal = Bounds {
-        left: window.left.saturating_sub(proximity).max(monitor.left),
+        left: compact_left.saturating_sub(proximity).max(monitor.left),
         top: window.top.saturating_sub(proximity).max(monitor.top),
-        right: window.right.saturating_add(proximity).min(monitor.right),
+        right: compact_left.saturating_add(compact_width).saturating_add(proximity).min(monitor.right),
         bottom: window.top.saturating_add(compact_height).saturating_add(proximity).min(monitor.bottom),
     };
     (near, reveal)
@@ -199,6 +241,15 @@ fn foreground_covers_island(
 }
 // END portable visibility policy
 
+// BEGIN portable visibility animation gate
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IslandVisibilityTransition {
+    pub generation: u64,
+    pub visible: bool,
+    pub duration_ms: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IslandVisibilitySnapshot {
@@ -209,6 +260,7 @@ pub struct IslandVisibilitySnapshot {
     pub visible: bool,
     pub reason: VisibilityReason,
     pub error: Option<String>,
+    pub transition: Option<IslandVisibilityTransition>,
 }
 
 impl Default for IslandVisibilitySnapshot {
@@ -221,6 +273,7 @@ impl Default for IslandVisibilitySnapshot {
             visible: true,
             reason: VisibilityReason::Fixed,
             error: None,
+            transition: None,
         }
     }
 }
@@ -231,7 +284,9 @@ struct Runtime {
     epoch: Instant,
     generation: u64,
     pending: Option<u64>,
+    transition_deadline_ms: Option<u64>,
     error_source: Option<VisibilityErrorSource>,
+    compact_frame: CompactFrame,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -248,7 +303,9 @@ impl Default for Runtime {
             epoch: Instant::now(),
             generation: 0,
             pending: None,
+            transition_deadline_ms: None,
             error_source: None,
+            compact_frame: CompactFrame::default(),
         }
     }
 }
@@ -266,7 +323,21 @@ impl Runtime {
             None
         }
     }
+
+    fn completion_target(&self, generation: u64) -> Option<bool> {
+        let transition = self.snapshot.transition.as_ref()?;
+        (self.generation == generation && self.pending == Some(generation)
+            && transition.generation == generation && transition.visible == self.policy.visible)
+            .then_some(transition.visible)
+    }
+
+    fn expired_generation(&self, now_ms: u64) -> Option<u64> {
+        let generation = self.pending?;
+        (now_ms >= self.transition_deadline_ms? && self.completion_target(generation).is_some())
+            .then_some(generation)
+    }
 }
+// END portable visibility animation gate
 
 #[derive(Clone, Default)]
 pub struct IslandVisibilityState {
@@ -289,6 +360,23 @@ pub fn island_visibility_snapshot(
 pub fn is_visible(state: &IslandVisibilityState) -> bool {
     let runtime = state.inner.lock().unwrap_or_else(|e| e.into_inner());
     runtime.policy.visible && runtime.snapshot.visible
+}
+
+pub(crate) fn remember_compact_frame(state: &IslandVisibilityState, width: f64, height: f64) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() {
+        return Err("Dimensões inválidas para a ilha.".into());
+    }
+    let mut runtime = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+    runtime.compact_frame = CompactFrame { width: width.clamp(96.0, 304.0), height: height.clamp(48.0, 72.0) };
+    Ok(())
+}
+
+#[tauri::command]
+pub fn complete_island_visibility_transition(app: AppHandle, state: State<'_, IslandVisibilityState>, generation: u64) {
+    #[cfg(windows)]
+    complete_transition(&app, &state, generation);
+    #[cfg(not(windows))]
+    let _ = (app, state, generation);
 }
 
 #[tauri::command]
@@ -376,12 +464,15 @@ fn reconcile(app: &AppHandle, state: &IslandVisibilityState) {
     let mut event = None;
     let request = {
         let mut runtime = state.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if runtime.policy.visible == runtime.snapshot.visible {
+        if runtime.pending == Some(runtime.generation) {
+            None
+        } else if runtime.policy.visible == runtime.snapshot.visible && runtime.snapshot.transition.is_none()
+            && runtime.error_source != Some(VisibilityErrorSource::Window) {
             let before = runtime.snapshot.clone();
             runtime.snapshot.reason = runtime.policy.reason;
+            runtime.pending = None;
+            runtime.transition_deadline_ms = None;
             event = runtime.changed(&before);
-            None
-        } else if runtime.pending == Some(runtime.generation) {
             None
         } else {
             let generation = runtime.generation;
@@ -390,54 +481,104 @@ fn reconcile(app: &AppHandle, state: &IslandVisibilityState) {
         }
     };
     emit(app, event);
-    let Some(generation) = request else {
-        return;
-    };
+    let Some(generation) = request else { return; };
     let ui_app = app.clone();
     let ui_state = state.clone();
     if let Err(error) = app.run_on_main_thread(move || {
         let event = {
             let mut runtime = ui_state.inner.lock().unwrap_or_else(|e| e.into_inner());
             if runtime.generation != generation {
-                if runtime.pending == Some(generation) {
-                    runtime.pending = None;
-                }
+                if runtime.pending == Some(generation) { runtime.pending = None; }
                 return;
             }
             let before = runtime.snapshot.clone();
             let target = runtime.policy.visible;
-            // Keep this short critical section on the UI thread so a new
-            // preference cannot race a stale hide/show operation.
-            match platform::apply(&ui_app, target) {
+            let compact = runtime.compact_frame;
+            // Hide only after the WebView acknowledges its exit. Native input
+            // is released immediately, so the fading surface cannot block apps.
+            let update = if target {
+                platform::apply(&ui_app, true, compact)
+            } else {
+                match platform::release_input(&ui_app) {
+                    Ok(()) => Ok((runtime.snapshot.visible, None)),
+                    // If the system refuses click-through, prefer immediately
+                    // hiding over leaving an invisible target over another app.
+                    Err(_) => platform::apply(&ui_app, false, compact),
+                }
+            };
+            match update {
                 Ok((actual_visible, error)) => {
                     runtime.snapshot.visible = actual_visible;
                     runtime.error_source = error.as_ref().map(|_| VisibilityErrorSource::Window);
                     runtime.snapshot.error = error;
-                    if actual_visible == target {
-                        runtime.snapshot.reason = runtime.policy.reason;
+                    runtime.snapshot.reason = runtime.policy.reason;
+                    if actual_visible {
+                        runtime.snapshot.transition = Some(IslandVisibilityTransition {
+                            generation, visible: target, duration_ms: if target { 200 } else { 180 },
+                        });
+                        runtime.transition_deadline_ms = Some(runtime.now_ms().saturating_add(240));
+                    } else {
+                        runtime.snapshot.transition = None;
+                        runtime.pending = None;
+                        runtime.transition_deadline_ms = None;
                     }
                 }
                 Err(error) => {
                     runtime.snapshot.error = Some(error);
                     runtime.error_source = Some(VisibilityErrorSource::Window);
+                    runtime.snapshot.transition = None;
+                    runtime.pending = None;
+                    runtime.transition_deadline_ms = None;
                 }
             }
-            runtime.pending = None;
             runtime.changed(&before)
         };
+        if event.as_ref().is_some_and(|snapshot| !snapshot.visible) {
+            // Release Runtime's mutex before taking the controls policy lock.
+            // A missing corner WebView event cannot leave a native ghost target.
+            crate::top_controls::hide_with_island(&ui_app);
+        }
         emit(&ui_app, event);
     }) {
-        state
-            .inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pending = None;
-        report_error(
-            app,
-            state,
-            format!("Não foi possível atualizar a janela da ilha: {error}"),
-            VisibilityErrorSource::Window,
-        );
+        state.inner.lock().unwrap_or_else(|e| e.into_inner()).pending = None;
+        report_error(app, state, format!("Não foi possível atualizar a janela da ilha: {error}"), VisibilityErrorSource::Window);
+    }
+}
+
+#[cfg(windows)]
+fn complete_transition(app: &AppHandle, state: &IslandVisibilityState, generation: u64) {
+    let ui_app = app.clone();
+    let ui_state = state.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        let event = {
+            let mut runtime = ui_state.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(target) = runtime.completion_target(generation) else { return; };
+            let before = runtime.snapshot.clone();
+            if !target {
+                let compact = runtime.compact_frame;
+                match platform::apply(&ui_app, false, compact) {
+                    Ok((actual_visible, error)) => {
+                        runtime.snapshot.visible = actual_visible;
+                        runtime.snapshot.error = error;
+                        runtime.error_source = runtime.snapshot.error.as_ref().map(|_| VisibilityErrorSource::Window);
+                    }
+                    Err(error) => {
+                        runtime.snapshot.error = Some(error);
+                        runtime.error_source = Some(VisibilityErrorSource::Window);
+                    }
+                }
+            }
+            runtime.snapshot.transition = None;
+            runtime.pending = None;
+            runtime.transition_deadline_ms = None;
+            runtime.changed(&before)
+        };
+        if event.as_ref().is_some_and(|snapshot| !snapshot.visible) {
+            crate::top_controls::hide_with_island(&ui_app);
+        }
+        emit(&ui_app, event);
+    }) {
+        report_error(app, state, format!("Não foi possível concluir a transição da ilha: {error}"), VisibilityErrorSource::Window);
     }
 }
 
@@ -446,7 +587,6 @@ mod platform {
     use super::*;
     use std::thread;
     use std::time::Duration;
-    use tauri::LogicalSize;
     use windows::Win32::Foundation::{HWND, POINT, RECT};
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -470,7 +610,7 @@ mod platform {
         HWND(raw as *mut std::ffi::c_void)
     }
 
-    fn observe(raw: usize) -> Result<Observation, String> {
+    fn observe(app: &AppHandle, raw: usize, compact: CompactFrame) -> Result<Observation, String> {
         unsafe {
             let island = hwnd(raw);
             let mut window_rect = RECT::default();
@@ -484,13 +624,14 @@ mod platform {
                 return Err("O Windows não forneceu os limites do monitor da ilha.".into());
             }
             let scale = f64::from(GetDpiForWindow(island).max(96)) / 96.0;
-            let (near, reveal) = pointer_regions(bounds(window_rect), bounds(info.rcMonitor), scale);
+            let (near, reveal) = pointer_regions(bounds(window_rect), bounds(info.rcMonitor), scale, compact);
             let mut cursor = POINT::default();
             GetCursorPos(&mut cursor).map_err(|error| error.to_string())?;
             let mut observation = Observation {
                 near_island: near.contains(cursor.x, cursor.y),
                 in_reveal_region: reveal.contains(cursor.x, cursor.y),
                 fullscreen: false,
+                control_interaction: false,
             };
             let foreground = GetForegroundWindow();
             let mut process_id = 0;
@@ -520,7 +661,14 @@ mod platform {
                     }
                 }
             }
-            Ok(observation)
+            let pointer_inside_control = ["top-left", "top-right"].iter().any(|label| {
+                let Some(control) = app.get_webview_window(label) else { return false; };
+                let Ok(handle) = control.hwnd() else { return false; };
+                if !IsWindowVisible(handle).as_bool() { return false; }
+                let mut rect = RECT::default();
+                GetWindowRect(handle, &mut rect).is_ok() && bounds(rect).contains(cursor.x, cursor.y)
+            });
+            Ok(observation.with_controls(pointer_inside_control))
         }
     }
 
@@ -530,7 +678,13 @@ mod platform {
 
     // Called only inside AppHandle::run_on_main_thread. ShowWindow's return is
     // the *previous* visibility, so confirm the result with IsWindowVisible.
-    pub(super) fn apply(app: &AppHandle, visible: bool) -> Result<(bool, Option<String>), String> {
+    pub(super) fn release_input(app: &AppHandle) -> Result<(), String> {
+        app.get_webview_window("island")
+            .ok_or_else(|| "A janela da ilha não está disponível.".to_string())?
+            .set_ignore_cursor_events(true).map_err(|error| error.to_string())
+    }
+
+    pub(super) fn apply(app: &AppHandle, visible: bool, compact: CompactFrame) -> Result<(bool, Option<String>), String> {
         let island = app
             .get_webview_window("island")
             .ok_or_else(|| "A janela da ilha não está disponível.".to_string())?;
@@ -538,12 +692,12 @@ mod platform {
         let native = hwnd(raw);
         let mut error = None;
         if visible {
-            if let Err(size_error) = island.set_size(LogicalSize::new(404.0, 72.0)) {
-                return Ok((
-                    unsafe { IsWindowVisible(native).as_bool() },
-                    Some(size_error.to_string()),
-                ));
+            if !unsafe { IsWindowVisible(native).as_bool() } {
+                if let Err(size_error) = crate::resize_island_frame(app, compact.width, compact.height) {
+                    return Ok((false, Some(size_error)));
+                }
             }
+            island.set_ignore_cursor_events(false).map_err(|error| error.to_string())?;
             // SW_SHOWNOACTIVATE preserves the foreground application and keyboard focus.
             unsafe {
                 let _ = ShowWindow(native, SW_SHOWNOACTIVATE);
@@ -553,8 +707,8 @@ mod platform {
             unsafe {
                 let _ = ShowWindow(native, SW_HIDE);
             }
-            if let Err(size_error) = island.set_size(LogicalSize::new(404.0, 72.0)) {
-                error = Some(size_error.to_string());
+            if let Err(size_error) = crate::resize_island_frame(app, compact.width, compact.height) {
+                error = Some(size_error);
             }
         }
         let actual = unsafe { IsWindowVisible(native).as_bool() };
@@ -587,7 +741,8 @@ mod platform {
             .name("pedro-island-visibility".into())
             .spawn(move || {
                 loop {
-                    match observe(raw) {
+                    let compact = worker_state.inner.lock().unwrap_or_else(|e| e.into_inner()).compact_frame;
+                    match observe(&worker_app, raw, compact) {
                         Ok(observation) => {
                             let event = {
                                 let mut runtime =
@@ -600,6 +755,9 @@ mod platform {
                                 }
                                 let prior = (runtime.policy.visible, runtime.policy.reason);
                                 let now = runtime.now_ms();
+                                if runtime.snapshot.visible && runtime.snapshot.transition.as_ref().is_some_and(|transition| !transition.visible) {
+                                    runtime.policy.cancel_idle_exit(observation.near_island, now);
+                                }
                                 runtime.policy.tick(observation, now);
                                 if prior != (runtime.policy.visible, runtime.policy.reason) {
                                     runtime.generation = runtime.generation.wrapping_add(1);
@@ -619,6 +777,15 @@ mod platform {
                             format!("Não foi possível observar a ilha: {error}"),
                             VisibilityErrorSource::Observation,
                         ),
+                    }
+                    // A broken observation or unresponsive WebView cannot
+                    // keep the native hit target alive after the exit deadline.
+                    let expired = {
+                        let runtime = worker_state.inner.lock().unwrap_or_else(|e| e.into_inner());
+                        runtime.expired_generation(runtime.now_ms())
+                    };
+                    if let Some(generation) = expired {
+                        complete_transition(&worker_app, &worker_state, generation);
                     }
                     thread::sleep(Duration::from_millis(80));
                 }
@@ -702,6 +869,7 @@ mod tests {
                 near_island: true,
                 fullscreen: true,
                 in_reveal_region: false,
+                control_interaction: false,
             },
             200,
         );
@@ -723,6 +891,7 @@ mod tests {
             in_reveal_region: true,
             fullscreen: true,
             near_island: false,
+            control_interaction: false,
         };
         policy.tick(edge, 400);
         policy.tick(edge, 519);
@@ -735,6 +904,7 @@ mod tests {
                 near_island: true,
                 fullscreen: true,
                 in_reveal_region: false,
+                ..Default::default()
             },
             4_000,
         );
@@ -804,7 +974,7 @@ mod tests {
             right: -977,
             bottom: -1011,
         };
-        let (near, edge) = pointer_regions(island, monitor, 1.5);
+        let (near, edge) = pointer_regions(island, monitor, 1.5, CompactFrame { width: 404.0, height: 72.0 });
         assert_eq!(
             edge,
             Bounds {
@@ -832,7 +1002,7 @@ mod tests {
                 left, top, right: left + (404.0_f64 * scale).round() as i32,
                 bottom: top + (424.0_f64 * scale).round() as i32,
             };
-            let (_, reveal) = pointer_regions(island, monitor, scale);
+            let (_, reveal) = pointer_regions(island, monitor, scale, CompactFrame { width: 404.0, height: 72.0 });
             assert!(reveal.contains(left + (20.0_f64 * scale).round() as i32, top + (28.0_f64 * scale).round() as i32));
             assert!(reveal.contains(island.right - (20.0_f64 * scale).round() as i32, top + (28.0_f64 * scale).round() as i32));
             assert!(!reveal.contains(left, monitor.top), "unrelated taskbar edge is not the capsule");
@@ -844,7 +1014,7 @@ mod tests {
     fn returning_to_dormant_capsule_reveals_without_fixed_mode_or_keyboard() {
         let mut policy = hybrid();
         policy.tick(Observation::default(), 3_000);
-        let hover = Observation { near_island: true, in_reveal_region: true, fullscreen: false };
+        let hover = Observation { near_island: true, in_reveal_region: true, fullscreen: false, ..Default::default() };
         policy.tick(hover, 3_080);
         policy.tick(hover, 3_199);
         assert!(!policy.visible);
@@ -858,6 +1028,113 @@ mod tests {
         assert!(policy.visible);
         policy.tick(Observation::default(), 12_000);
         assert!(!policy.visible);
+    }
+
+    #[test]
+    fn expanded_wings_never_become_the_dormant_reveal_target() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let monitor = Bounds { left: -3840, top: -2160, right: 0, bottom: 0 };
+            let center = -1920;
+            let top = monitor.top + (42.0_f64 * scale).round() as i32;
+            let half_width = (584.0_f64 * scale / 2.0).round() as i32;
+            let expanded = Bounds { left: center - half_width, top, right: center + half_width,
+                bottom: top + (424.0_f64 * scale).round() as i32 };
+            for compact in [CompactFrame::default(), CompactFrame { width: 304.0, height: 60.0 }] {
+                let (_, reveal) = pointer_regions(expanded, monitor, scale, compact);
+                assert!(reveal.contains(center, top + (24.0_f64 * scale).round() as i32));
+                assert!(!reveal.contains(expanded.left + (24.0_f64 * scale).round() as i32, top + 24));
+                assert!(!reveal.contains(center, top + (100.0_f64 * scale).round() as i32));
+                assert!(!reveal.contains(center, monitor.top), "the top taskbar is outside the dormant capsule");
+            }
+        }
+    }
+
+    #[test]
+    fn pointer_return_can_reverse_an_idle_exit_but_not_a_fullscreen_exit() {
+        let mut policy = hybrid();
+        policy.tick(Observation::default(), 3_000);
+        policy.cancel_idle_exit(false, 3_050);
+        assert!(!policy.visible);
+        policy.cancel_idle_exit(true, 3_100);
+        assert!(policy.visible);
+        policy.tick(Observation::default(), 6_099);
+        assert!(policy.visible);
+        policy.tick(Observation::default(), 6_100);
+        assert!(!policy.visible);
+        policy.configure(IslandVisibilityMode::Fixed, 3, 7_000);
+        policy.configure(IslandVisibilityMode::Hybrid, 3, 7_000);
+        policy.tick(Observation { fullscreen: true, in_reveal_region: true, near_island: true, ..Default::default() }, 7_100);
+        policy.cancel_idle_exit(true, 7_200);
+        assert!(!policy.visible, "fullscreen requires leaving and deliberately returning");
+    }
+
+    #[test]
+    fn using_a_visible_corner_control_keeps_it_usable_over_a_maximized_app() {
+        let mut policy = hybrid();
+        let desktop = Observation { fullscreen: true, ..Default::default() };
+        policy.tick(desktop.with_controls(true), 3_000);
+        assert!(policy.visible);
+        policy.tick(desktop.with_controls(true), 9_000);
+        assert!(policy.visible, "pointer interaction refreshes the same idle deadline");
+        policy.tick(Observation { fullscreen: true, near_island: true, ..Default::default() }, 9_080);
+        assert!(policy.visible, "moving from a corner to the center preserves intentional interaction");
+        policy.tick(desktop.with_controls(false), 12_079);
+        assert!(policy.visible);
+        policy.tick(desktop.with_controls(false), 12_080);
+        assert!(!policy.visible, "inactivity suppression resumes outside visible controls");
+        policy.tick(desktop.with_controls(false), 99_000);
+        assert!(!policy.visible, "a hidden corner must not become an invisible reveal window");
+    }
+
+    fn exiting_runtime() -> Runtime {
+        let mut runtime = Runtime::default();
+        runtime.policy = hybrid();
+        runtime.policy.tick(Observation::default(), 3_000);
+        runtime.generation = 7;
+        runtime.pending = Some(7);
+        runtime.transition_deadline_ms = Some(3_240);
+        runtime.snapshot.transition = Some(IslandVisibilityTransition { generation: 7, visible: false, duration_ms: 180 });
+        runtime
+    }
+
+    #[test]
+    fn a_late_exit_acknowledgement_cannot_hide_a_reversed_surface() {
+        let mut runtime = exiting_runtime();
+        assert_eq!(runtime.completion_target(7), Some(false));
+        runtime.policy.cancel_idle_exit(true, 3_100);
+        runtime.generation = 8;
+        assert_eq!(runtime.completion_target(7), None);
+        assert_eq!(runtime.expired_generation(3_500), None);
+        runtime.pending = Some(8);
+        runtime.snapshot.transition = Some(IslandVisibilityTransition { generation: 8, visible: true, duration_ms: 200 });
+        assert_eq!(runtime.completion_target(7), None);
+        assert_eq!(runtime.completion_target(8), Some(true));
+    }
+
+    #[test]
+    fn missing_frontend_acknowledgement_times_out_only_the_current_transition() {
+        let mut runtime = exiting_runtime();
+        assert_eq!(runtime.expired_generation(3_239), None);
+        assert_eq!(runtime.expired_generation(3_240), Some(7));
+        runtime.pending = None;
+        assert_eq!(runtime.expired_generation(9_000), None);
+        runtime.pending = Some(7);
+        runtime.snapshot.transition = None;
+        assert_eq!(runtime.expired_generation(9_000), None);
+    }
+
+    #[test]
+    fn a_show_acknowledgement_cannot_finish_a_subsequent_fullscreen_exit() {
+        let mut runtime = exiting_runtime();
+        runtime.policy.configure(IslandVisibilityMode::Fixed, 3, 3_050);
+        runtime.generation = 8;
+        runtime.pending = Some(8);
+        runtime.snapshot.transition = Some(IslandVisibilityTransition { generation: 8, visible: true, duration_ms: 200 });
+        assert_eq!(runtime.completion_target(8), Some(true));
+        runtime.policy.configure(IslandVisibilityMode::Hybrid, 3, 3_100);
+        runtime.policy.tick(Observation { fullscreen: true, ..Default::default() }, 3_150);
+        runtime.generation = 9;
+        assert_eq!(runtime.completion_target(8), None);
     }
 
     #[test]

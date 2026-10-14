@@ -5,6 +5,11 @@ export type Page = DesktopPage;
 
 export const DESKTOP_NAVIGATION_EVENT = 'pedro:navigate';
 
+/** A compact WebView's viewport is not the available desktop width. */
+export async function readIslandAvailableWidth(): Promise<number> {
+  return isTauri() ? invoke<number>('island_available_width') : window.innerWidth;
+}
+
 /** Opens a section in the existing native dashboard, rather than toggling it off. */
 export async function requestPage(page: DesktopPage): Promise<void> {
   if (isTauri()) {
@@ -16,7 +21,7 @@ export async function requestPage(page: DesktopPage): Promise<void> {
   const windowLabel = url.searchParams.get('window');
   url.searchParams.set('window', 'main');
   url.searchParams.set('page', page);
-  if (windowLabel === 'island' || windowLabel === 'dock') {
+  if (windowLabel === 'island' || windowLabel === 'dock' || windowLabel === 'top-left' || windowLabel === 'top-right') {
     const panel = window.open(url.toString(), 'pedro-main');
     if (!panel) throw new Error('Permita abrir a janela do painel neste navegador.');
     panel.focus();
@@ -26,10 +31,20 @@ export async function requestPage(page: DesktopPage): Promise<void> {
 }
 
 /** Native sizes include the transparent padding that contains the widget shadow. */
-export async function syncIslandSize(expanded: boolean, frameHeight = 284): Promise<void> {
+let islandSizeQueue = Promise.resolve();
+export async function syncIslandSize(expanded: boolean, frameHeight = expanded ? 284 : 48, frameWidth = expanded ? 584 : 120): Promise<void> {
   if (!isTauri()) return;
-  if (expanded) await invoke('expandir_ilha', { altura: Math.max(72, Math.min(424, frameHeight)) });
-  else await invoke('recolher_ilha');
+  const dimensions = {
+    altura: Math.max(48, Math.min(424, frameHeight)),
+    largura: Math.max(96, Math.min(664, frameWidth)),
+  };
+  // Keep prepare/grow/shrink commands ordered even when an interrupted React
+  // animation issues a new request before the previous IPC reply arrives.
+  const request = islandSizeQueue.catch(() => {}).then(async () => {
+    await invoke(expanded ? 'expandir_ilha' : 'recolher_ilha', dimensions);
+  });
+  islandSizeQueue = request;
+  await request;
 }
 
 interface DockVisibilityBatch {

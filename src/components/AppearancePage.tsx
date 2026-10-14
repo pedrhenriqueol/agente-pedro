@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { Moon, Sun, Monitor, Palette, RotateCcw, Clock3, Focus, Wallet, Minus, Eye, EyeOff, Sparkles, Navigation, Accessibility, ChevronDown, Music2, Pause, Play, PanelLeftClose, Layers } from 'lucide-react';
+import { Moon, Sun, Monitor, Palette, RotateCcw, Clock3, Focus, Wallet, Minus, Eye, EyeOff, Sparkles, Navigation, Accessibility, ChevronDown, Music2, Pause, Play, PanelLeftClose, Layers, LayoutGrid, Volume2 } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
 import { RetainedTransition } from './ui/PageTransition';
 import { SelectionIndicator } from './ui/SelectionIndicator';
 import { AnimatedDisclosure } from './ui/AnimatedDisclosure';
 import '../styles/appearance-motion.css';
+import '../styles/appearance-redesign.css';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { useFocusStore } from '../stores/useFocusStore';
 import { formatCentsToBRL, useFinanceStore } from '../stores/useFinanceStore';
 import { useMediaStore } from '../stores/useMediaStore';
+import { ACCENT_COLORS } from '../lib/preferenceAppearance';
 
 const sections = [
   { id: 'island', label: 'Ilha', Icon: Sparkles },
@@ -32,6 +34,18 @@ const themeOptions = [
   { value: 'dark', label: 'Escuro', Icon: Moon },
   { value: 'light', label: 'Claro', Icon: Sun },
   { value: 'system', label: 'Sistema', Icon: Monitor },
+] as const;
+const sizeOptions = [
+  { value: 'small', label: 'Pequena' }, { value: 'medium', label: 'Média' }, { value: 'large', label: 'Grande' },
+] as const;
+const toneOptions = [
+  { value: 'graphite', label: 'Grafite', color: '#151923' },
+  { value: 'midnight', label: 'Meia-noite', color: '#1d2b46' },
+  { value: 'emerald', label: 'Verde profundo', color: '#163a30' },
+] as const;
+const accentOptions = [
+  { value: 'mint', label: 'Verde' }, { value: 'violet', label: 'Violeta' },
+  { value: 'blue', label: 'Azul' }, { value: 'amber', label: 'Âmbar' }, { value: 'rose', label: 'Rosa' },
 ] as const;
 
 export function AppearancePage() {
@@ -63,6 +77,7 @@ export function AppearancePage() {
   const emptyMusicTitle = media.presentationPhase === 'unavailable' ? 'Reprodução indisponível' : media.presentationPhase === 'loading' ? 'Buscando reprodução…' : 'Sua música, por perto';
   const progress = Math.max(0, Math.min(1, focus.totalDurationSeconds > 0 ? 1 - focus.remainingSeconds / focus.totalDurationSeconds : 0));
   const artwork = session?.artwork && session.artwork !== failedArtwork ? session.artwork : null;
+  const previewHasActivity = previewMode === 'focus' || previewMode === 'music' || previewMode === 'balance';
 
   useEffect(() => {
     const interval = window.setInterval(() => setTime(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })), 10000);
@@ -106,11 +121,19 @@ export function AppearancePage() {
               <p className="settings-help" id="island-visibility-help">Sem interação, ou quando outro app ocupa a tela, a ilha se esconde. Aproxime o mouse do lugar da ilha, no topo, para ela voltar. Foco e música continuam.</p>
             </>}
             {!isTauri() && <p className="settings-help">A visibilidade híbrida funciona no aplicativo para Windows.</p>}
+            <fieldset className="settings-fieldset"><legend className="label">Tamanho ao expandir</legend><div className="choice-row settings-island-sizes">{sizeOptions.map(({ value, label }) =>
+              <label className={'choice ' + (p.islandSize === value ? 'selected' : '')} key={value}><input type="radio" name="island-size" value={value} checked={p.islandSize === value}
+                onChange={() => p.updatePreferences({ islandSize: value })} /><span>{label}</span></label>)}</div></fieldset>
+            <div className="preference-row settings-preference"><div><h2>Expandir ao aproximar o mouse</h2><p className="muted">Os controles aparecem quando você chega à ilha e recolhem ao sair.</p></div>
+              <label className="switch"><input type="checkbox" aria-label="Expandir ao aproximar o mouse" checked={p.islandHoverExpand} onChange={event => p.updatePreferences({ islandHoverExpand: event.target.checked })} /><span /></label></div>
             <fieldset className="settings-fieldset"><legend className="label">Quando não há atividade</legend><div className="idle-choices">{idleOptions.map(({ value, label, detail, Icon }) =>
               <label className={'idle-choice ' + (p.islandIdle === value ? 'selected' : '')} key={value}><input type="radio" name="island" value={value} checked={p.islandIdle === value}
                 onChange={() => p.updatePreferences({ islandIdle: value })} /><Icon size={19} aria-hidden="true" /><span><strong>{label}</strong><small>{detail}</small></span></label>)}</div></fieldset>
             <p className="settings-help">Durante uma sessão, o foco tem prioridade. A música aparece quando não há foco em andamento.</p>
             <AnimatedDisclosure title="Acabamento da ilha" reduceMotion={p.reduceMotion}>
+              <fieldset className="settings-fieldset"><legend className="label">Cor da superfície</legend><div className="accent-choices settings-surface-tones">{toneOptions.map(({ value, label, color }) =>
+                <label className={'accent-choice ' + (p.islandTone === value ? 'selected' : '')} key={value}><input type="radio" name="island-tone" value={value} checked={p.islandTone === value}
+                  onChange={() => p.updatePreferences({ islandTone: value })} /><span style={{ background: color }} /><span>{label}</span></label>)}</div></fieldset>
               <label className="slider-label" htmlFor="island-opacity"><span>Opacidade da superfície</span><output>{Math.round(p.islandOpacity * 100)}%</output></label>
               <input id="island-opacity" className="range-input" type="range" min="55" max="100" value={Math.round(p.islandOpacity * 100)} onChange={event => p.updatePreferences({ islandOpacity: Number(event.target.value) / 100 })} />
               <p className="settings-help">Textos e controles mantêm seu contraste enquanto a superfície muda.</p>
@@ -124,6 +147,8 @@ export function AppearancePage() {
               <label className="switch"><input type="checkbox" aria-label="Recolher navegação do painel" checked={p.sidebarCollapsed} onChange={event => p.updatePreferences({ sidebarCollapsed: event.target.checked })} /><span /></label></div>
             <div className="preference-row settings-preference"><div><h2>Dock de atalhos</h2><p className="muted">Acesso permanente às áreas no desktop, quando você preferir.</p></div>
               <label className="switch"><input type="checkbox" aria-label="Mostrar dock no desktop" checked={p.dockEnabled} onChange={event => p.updatePreferences({ dockEnabled: event.target.checked })} /><span /></label></div>
+            <div className="preference-row settings-preference"><div><h2>Controles nos cantos superiores</h2><p className="muted">Aparência e atalhos à esquerda, volume à direita.</p></div>
+              <label className="switch"><input type="checkbox" aria-label="Mostrar controles nos cantos superiores" checked={p.topControlsEnabled} onChange={event => p.updatePreferences({ topControlsEnabled: event.target.checked })} /><span /></label></div>
             {p.dockEnabled && <AnimatedDisclosure title="Acabamento do dock" reduceMotion={p.reduceMotion}>
               <label className="slider-label" htmlFor="dock-opacity"><span>Opacidade do dock</span><output>{Math.round(p.dockOpacity * 100)}%</output></label>
               <input id="dock-opacity" className="range-input" type="range" min="55" max="100" value={Math.round(p.dockOpacity * 100)} onChange={event => p.updatePreferences({ dockOpacity: Number(event.target.value) / 100 })} />
@@ -135,9 +160,17 @@ export function AppearancePage() {
             <fieldset className="settings-fieldset"><legend className="label">Tema do aplicativo</legend><div className="choice-row">{themeOptions.map(({ value, label, Icon }) =>
               <label className={'choice ' + (p.theme === value ? 'selected' : '')} key={value}><input type="radio" name="theme" value={value} checked={p.theme === value}
                 onChange={() => p.updatePreferences({ theme: value })} /><Icon size={17} aria-hidden="true" /><span>{label}</span></label>)}</div></fieldset>
-            <fieldset className="settings-fieldset"><legend className="label">Cor de destaque</legend><div className="accent-choices">{([{ value: 'mint', label: 'Verde', color: '#3fc8a5' }, { value: 'violet', label: 'Violeta', color: '#a78bfa' }, { value: 'blue', label: 'Azul', color: '#66aaff' }] as const).map(option =>
+            <fieldset className="settings-fieldset"><legend className="label">Cor de destaque</legend><div className="accent-choices settings-redesign-accents">{accentOptions.map(option =>
               <label className={'accent-choice ' + (p.accent === option.value ? 'selected' : '')} key={option.value}><input type="radio" name="accent" value={option.value} checked={p.accent === option.value}
-                onChange={() => p.updatePreferences({ accent: option.value })} /><span style={{ background: option.color }} /><span>{option.label}</span></label>)}</div></fieldset>
+                onChange={() => p.updatePreferences({ accent: option.value })} /><span style={{ background: ACCENT_COLORS[option.value].dark }} /><span>{option.label}</span></label>)}
+              <label className={'accent-choice ' + (p.accent === 'custom' ? 'selected' : '')}><input type="radio" name="accent" value="custom" checked={p.accent === 'custom'}
+                onChange={() => p.updatePreferences({ accent: 'custom' })} /><span className="settings-custom-color-mark" /><span>Personalizada</span></label>
+            </div></fieldset>
+            {p.accent === 'custom' && <div className="settings-custom-color"><label htmlFor="settings-custom-accent">Sua cor de destaque</label>
+              <input id="settings-custom-accent" type="color" value={p.customAccent} onChange={event => p.updatePreferences({ customAccent: event.target.value })} />
+              <output htmlFor="settings-custom-accent">{p.customAccent.toUpperCase()}</output>
+              <p className="settings-help">A intensidade se ajusta para manter textos e controles legíveis.</p>
+            </div>}
             <AnimatedDisclosure title="Material do painel" reduceMotion={p.reduceMotion}>
               <fieldset className="settings-fieldset"><legend className="label">Superfície do painel</legend><div className="idle-choices">{([
                 { value: 'system', label: 'Sistema', detail: 'Integração suave com o desktop.', Icon: Layers },
@@ -165,16 +198,18 @@ export function AppearancePage() {
         <div className="settings-preview-switch" role="group" aria-label="Conteúdo da prévia">{([
           { value: 'current', label: 'Agora' }, { value: 'focus', label: 'Foco' }, { value: 'music', label: 'Música' }, { value: 'idle', label: 'Repouso' },
         ] as const).map(option => <button type="button" key={option.value} aria-pressed={preview === option.value} onClick={() => setPreview(option.value)}>{option.label}</button>)}</div>
-        <div className="settings-preview-desktop" style={{ '--settings-preview-opacity': p.islandOpacity } as CSSProperties}>
-          <div className="settings-preview-island" aria-label="Prévia da ilha">
-            <div className="settings-preview-identity"><span className="settings-preview-mark"><Sparkles size={14} aria-hidden="true" /></span><span>{time}</span></div>
+        <div className="settings-preview-desktop settings-redesign-preview" data-island-tone={p.islandTone} data-island-size={p.islandSize} data-top-controls={p.topControlsEnabled}
+          style={{ '--settings-preview-opacity': p.islandOpacity } as CSSProperties}>
+          {p.topControlsEnabled && <div className="settings-preview-corners" aria-hidden="true"><span><Palette size={10} /><LayoutGrid size={10} /></span><span><Volume2 size={11} /></span></div>}
+          <div className="settings-preview-island" data-has-activity={previewHasActivity} aria-label="Prévia da ilha">
+            <span className="settings-preview-monogram" aria-hidden="true">p<span /></span>
             <div className="settings-preview-context">{previewMode === 'music' ? <>
               <span className="settings-preview-artwork">{artwork ? <img src={artwork} alt="" onError={() => setFailedArtwork(artwork)} /> : <Music2 size={15} aria-hidden="true" />}</span>
               <span>{session?.title || (media.presentationPhase === 'loading' ? 'Buscando…' : media.presentationPhase === 'unavailable' ? 'Indisponível' : 'Sem reprodução')}</span><span className={'presence-dot' + (media.presentationPhase === 'ready' && session?.playbackStatus === 'playing' ? ' is-active' : '')} />
             </> : previewMode === 'focus' ? <><span className={'presence-dot' + (active ? ' is-active' : '')} /><span>{focus.sessionSaveState === 'error' ? 'Registro pendente' : focus.sessionSaveState === 'saving' ? 'Registrando…' : focus.pomodoroState === 'completed' ? 'Concluído' : timer}</span></>
               : previewMode === 'balance' ? <><Wallet size={14} aria-hidden="true" /><span>{finance.accounts.length ? formatCentsToBRL(finance.consolidated.total_balance_cents) : 'Suas finanças'}</span></>
-                : previewMode === 'minimal' ? <span>Pedro</span> : <span>Seu dia, com calma</span>}</div>
-            <ChevronDown size={14} className="muted" aria-hidden="true" />
+                : previewMode === 'minimal' ? null : <span>{time}</span>}</div>
+            {previewMode !== 'music' && previewMode !== 'minimal' && <ChevronDown size={10} className="muted" aria-hidden="true" />}
           </div>
           {previewMode === 'focus' && <div className="settings-preview-activity"><span className="settings-preview-caption">{focusStatus}</span><div className="settings-preview-focus"><strong>{timer}</strong><span className="settings-preview-play" aria-hidden="true">{active ? <Pause size={15} /> : <Play size={15} />}</span></div><p>{selectedTask?.title || (focus.currentMode === 'break' ? 'Respire. Você merece uma pausa.' : 'Escolha uma tarefa ou apenas comece.')}</p><div className="settings-preview-progress"><span style={{ transform: `scaleX(${progress})` }} /></div></div>}
           {previewMode === 'music' && <div className="settings-preview-activity"><span className="settings-preview-caption">{musicStatus}</span><div className="settings-preview-track"><span className="settings-preview-artwork is-large">{artwork ? <img src={artwork} alt="" onError={() => setFailedArtwork(artwork)} /> : <Music2 size={23} aria-hidden="true" />}</span><div><strong>{session?.title || emptyMusicTitle}</strong><p>{session?.artist || (session ? 'Artista não informado' : 'Dê play no navegador para ver sua faixa aqui.')}</p></div></div></div>}

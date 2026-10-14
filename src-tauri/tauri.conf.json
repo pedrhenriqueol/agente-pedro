@@ -54,6 +54,36 @@
         "focus": false,
         "skipTaskbar": true,
         "url": "index.html?window=dock"
+      },
+      {
+        "label": "top-left",
+        "title": "Agente Pedro - Controles",
+        "width": 128,
+        "height": 46,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "skipTaskbar": true,
+        "url": "index.html?window=top-left"
+      },
+      {
+        "label": "top-right",
+        "title": "Agente Pedro - Volume",
+        "width": 90,
+        "height": 46,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "skipTaskbar": true,
+        "url": "index.html?window=top-right"
       }
     ],
     "security": {

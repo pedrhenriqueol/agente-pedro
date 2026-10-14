@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "top-controls",
+  "description": "Eventos e persistência local para os dois controles de canto do Pedro",
+  "windows": ["top-left", "top-right"],
+  "permissions": [
+    "core:default",
+    "sql:default",
+    "sql:allow-execute",
+    "sql:allow-select"
+  ]
+}

@@ -27,10 +27,10 @@ function environment(native = true) {
   const module = { exports: {} };
   const runtime = { native, invoke(command, args) {
     const response = deferred();
-    requests.push({ command, visible: args.visivel, ...response });
+    requests.push({ command, args, visible: args?.visivel, ...response });
     return response.promise;
   } };
-  vm.runInNewContext(bundle.outputFiles[0].text, { module, exports: module.exports, runtime, Promise, Error });
+  vm.runInNewContext(bundle.outputFiles[0].text, { module, exports: module.exports, runtime, Promise, Error, window: { innerWidth: 120 } });
   return { ...module.exports, requests };
 }
 
@@ -87,6 +87,50 @@ test('a failed coalesced batch rejects all waiters and a later retry can restore
   const retry = env.setDockVisible(false);
   assert.equal(env.requests.length, 3);
   assert.equal(env.requests[2].visible, false);
+  env.requests[2].resolve();
+  await retry;
+});
+
+test('an interrupted island grow waits for native confirmation before shrinking to its compact frame', async () => {
+  const env = environment();
+  const grow = env.syncIslandSize(true, 312, 584);
+  const compact = env.syncIslandSize(false, 60, 304);
+  await settle();
+  assert.equal(env.requests.length, 1);
+  assert.equal(env.requests[0].command, 'expandir_ilha');
+  assert.deepEqual(JSON.parse(JSON.stringify(env.requests[0].args)), { altura: 312, largura: 584 });
+  env.requests[0].resolve();
+  await grow; await settle();
+  assert.equal(env.requests.length, 2);
+  assert.equal(env.requests[1].command, 'recolher_ilha');
+  assert.deepEqual(JSON.parse(JSON.stringify(env.requests[1].args)), { altura: 60, largura: 304 });
+  env.requests[1].resolve();
+  await compact;
+});
+
+test('an island with a compact viewport reads desktop space from its native monitor', async () => {
+  const env = environment();
+  const width = env.readIslandAvailableWidth();
+  assert.equal(env.requests[0].command, 'island_available_width');
+  env.requests[0].resolve(1920);
+  assert.equal(await width, 1920, '120px WebView viewport must not prevent a 584px expanded frame');
+  const preview = environment(false);
+  assert.equal(await preview.readIslandAvailableWidth(), 120);
+  assert.equal(preview.requests.length, 0);
+});
+
+test('failed island preparation cannot strand a queued compact recovery or the next grow', async () => {
+  const env = environment();
+  const failure = assert.rejects(env.syncIslandSize(true, 280, 664), /Ilha escondida/);
+  const compact = env.syncIslandSize(false, 48, 120);
+  const retry = env.syncIslandSize(true, 300, 504);
+  await settle();
+  env.requests[0].reject(new Error('Ilha escondida'));
+  await failure; await settle();
+  assert.equal(env.requests[1].command, 'recolher_ilha');
+  env.requests[1].resolve();
+  await compact; await settle();
+  assert.equal(env.requests[2].command, 'expandir_ilha');
   env.requests[2].resolve();
   await retry;
 });

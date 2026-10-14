@@ -1,0 +1,39 @@
+.desktop-top-controls {
+  --music-muted: var(--widget-muted);
+  --music-accent: var(--widget-accent);
+  --music-line: var(--widget-line);
+  width: var(--top-frame-width, 128px);
+  max-width: 100vw;
+  padding: 0 8px 16px;
+  height: 100%;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: opacity 150ms cubic-bezier(.16,1,.3,1), transform 180ms cubic-bezier(.16,1,.3,1);
+  pointer-events: none;
+}
+.desktop-top-controls[data-top-visible='true'] { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.desktop-top-notch { display: flex; align-items: center; gap: 1px; width: 112px; height: 30px; padding: 2px 4px; border-radius: 0 0 14px 14px; background: var(--widget-surface); border: 1px solid var(--widget-line); border-top: 0; }
+.desktop-top-controls.is-right .desktop-top-notch { width: 74px; margin-left: auto; justify-content: space-evenly; }
+.desktop-top-notch > button { display: inline-flex; align-items: center; justify-content: center; height: 24px; min-width: 27px; padding: 3px 5px; border-radius: 7px; color: var(--widget-muted); transition: color 130ms ease, background 130ms ease; }
+.desktop-top-notch > button:hover:not(:disabled), .desktop-top-notch > button[aria-expanded='true'] { color: var(--widget-text); background: var(--widget-raised); }
+.desktop-top-notch > .desktop-top-tasks { gap: 3px; min-width: 41px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.desktop-top-panel { width: 368px; margin-top: 6px; padding: 8px; background: var(--widget-surface); border: 1px solid var(--widget-line); border-radius: 18px; opacity: 0; transform: translateY(-6px) scale(.985); transform-origin: top left; transition: opacity 160ms ease, transform 180ms cubic-bezier(.16,1,.3,1), height 180ms cubic-bezier(.16,1,.3,1); pointer-events: none; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--widget-line) transparent; }
+.desktop-top-controls.is-right .desktop-top-panel { width: 288px; margin-left: auto; transform-origin: top right; padding: 12px; }
+.desktop-top-panel[data-panel-visible='true'] { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.desktop-top-controls .island-appearance { width: 100%; margin: 0; }
+.desktop-top-controls .island-appearance-scroll { max-height: 274px; }
+.desktop-top-volume-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.desktop-top-volume-heading > span { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; }
+.desktop-top-volume-heading > button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--widget-muted); }
+.desktop-top-volume-heading > button:hover { background: var(--widget-raised); }
+.desktop-top-panel .music-volume { margin: 12px 0 4px; padding: 0; border: 0; }
+.desktop-top-panel .music-volume > label, .desktop-top-panel .music-volume > output { font-size: 10px; }
+.desktop-top-refresh { display: inline-flex; align-items: center; gap: 5px; min-height: 23px; padding: 3px 5px; margin: 3px 0 0 -5px; color: var(--widget-muted) !important; font-size: 10px !important; border-radius: 6px; }
+.desktop-top-refresh:hover { color: var(--widget-text) !important; background: var(--widget-raised); }
+.desktop-top-help { color: var(--widget-muted); font-size: 10px; line-height: 1.6; padding: 12px 0 4px; }
+.desktop-top-error { color: var(--danger); font-size: 10px; line-height: 1.5; margin-top: 6px; max-height: 56px; overflow: auto; }
+.desktop-top-error button { text-decoration: underline; margin: 3px 0; display: block; }
+.desktop-top-sr-error { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+:root[data-reduced-motion='true'] .desktop-top-controls, :root[data-reduced-motion='true'] .desktop-top-panel { transition-duration: 0ms; transform: none; }
+@media (prefers-reduced-motion: reduce) { .desktop-top-controls, .desktop-top-panel { transition-duration: 0ms; transform: none; } }

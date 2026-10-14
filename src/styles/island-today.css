@@ -1,9 +1,13 @@
-.island-today { min-width: 0; padding: 10px 12px 7px; background: var(--surface, #0c0e14); border: 1px solid var(--widget-line, #1e2633); border-radius: 14px; }
-.island-today-tabs { position: relative; display: flex; gap: 3px; padding: 3px; margin-bottom: 8px; border-radius: 9px; background: var(--widget-raised, #121620); }
-.island-today-tabs > button { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-width: 0; min-height: 29px; border-radius: 6px; color: var(--widget-muted, #94a3b8); font-size: 11px; }
+.island-today { min-width: 0; padding: 11px 12px 7px; background: var(--island-card-surface, var(--surface, #0c0e14)); border: 1px solid var(--widget-line, #1e2633); border-radius: 15px; container-type: inline-size; }
+.island-today-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 7px; margin-bottom: 11px; }
+.island-today-tabs { position: relative; display: flex; gap: 3px; width: fit-content; max-width: 100%; padding: 3px; border-radius: 10px; background: transparent; }
+.island-today .island-today-tabs > button { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; min-height: 26px; padding: 4px 8px; border-radius: 7px; color: var(--widget-muted, #94a3b8); font-size: 10px; }
+.island-today-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.island-today .island-today-actions > button { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 7px; color: var(--widget-muted, #94a3b8); }
+.island-today .island-today-actions > button:hover:not(:disabled) { background: var(--widget-raised, #121620); color: var(--widget-text, #f8fafc); }
 .island-today-tabs > button[aria-selected='true'] { color: var(--widget-accent, #10b981); }
 .island-today-tabs > button small { font-size: 10px; font-variant-numeric: tabular-nums; opacity: .8; }
-.island-today-indicator { position: absolute; left: 0; border-radius: 6px; background: var(--surface, #0c0e14); pointer-events: none; opacity: 0; }
+.island-today-indicator { position: absolute; left: 0; border-radius: 7px; background: var(--widget-raised, #121620); pointer-events: none; opacity: 0; }
 .island-today-indicator[data-ready='true'] { opacity: 1; transition: transform 180ms cubic-bezier(.16,1,.3,1), width 180ms cubic-bezier(.16,1,.3,1); }
 .island-today-presence { display: grid; position: relative; min-width: 0; }
 .island-today-presence > .island-today-tabpanel { grid-area: 1 / 1; min-width: 0; }
@@ -35,6 +39,46 @@
 .island-today-notice.is-error { color: var(--warning, #f59e0b); margin: 0 0 7px; }
 .island-today-notice .widget-icon-button { width: 25px; height: 25px; border-radius: 6px; }
 .island-today-spinner { animation: island-today-spin 850ms linear infinite; }
+.island-agenda-layout { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(202px, 1.55fr); gap: 20px; align-items: start; }
+.island-agenda-summary { min-width: 0; padding-right: 14px; border-right: 1px solid var(--widget-line, #1e2633); min-height: 192px; }
+.island-agenda-clock { display: block; font-size: 31px; font-weight: 600; letter-spacing: -1px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.island-agenda-date { margin: 4px 0 13px; font-size: 10px; line-height: 1.5; color: var(--widget-muted, #94a3b8); }
+.island-agenda-date::first-letter { text-transform: uppercase; }
+.island-agenda-empty { margin: 0; max-width: 160px; font-size: 10px; line-height: 1.6; color: var(--widget-muted, #94a3b8); }
+.island-agenda-tasks > li { min-height: 36px; padding: 4px 0; gap: 5px; }
+.island-agenda-tasks .island-today-check { width: 23px; height: 25px; flex-basis: 23px; }
+.island-agenda-tasks .island-today-item-copy strong { font-size: 10px; }
+.island-agenda-create { margin-top: 11px; }
+.island-agenda-create[hidden] { display: none; }
+.island-calendar { min-width: 0; }
+.island-calendar-heading { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin: 0 0 8px; }
+.island-calendar-heading > strong { min-width: 0; font-size: 10px; font-weight: 600; text-transform: capitalize; }
+.island-calendar-heading > div { display: flex; gap: 3px; }
+.island-calendar-heading button { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--widget-muted, #94a3b8); }
+.island-calendar-heading button:hover { background: var(--widget-raised, #121620); color: var(--widget-text, #f8fafc); }
+.island-calendar-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: center; gap: 2px; }
+.island-calendar-week > span { text-align: center; font-size: 9px; color: var(--widget-muted, #94a3b8); padding: 0 0 4px; }
+.island-calendar-week > div { min-width: 0; }
+.island-today .island-calendar-week button { position: relative; display: grid; place-items: center; width: 100%; min-height: 24px; border-radius: 6px; font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; transition: background 130ms ease, color 130ms ease; }
+.island-calendar-week button[data-outside] { color: var(--widget-muted, #94a3b8); opacity: .55; }
+.island-calendar-week button[data-today] { color: var(--widget-accent, #10b981); }
+.island-calendar-week button:hover { background: var(--widget-raised, #121620); }
+.island-calendar-week button[data-selected] { background: var(--widget-text, #f8fafc); color: var(--surface, #0c0e14); opacity: 1; }
+.island-calendar-week button > i { position: absolute; bottom: 2px; width: 3px; height: 3px; border-radius: 50%; background: var(--widget-accent, #10b981); }
+.island-calendar-week button[data-selected] > i { background: currentColor; }
+.island-calendar-today { display: block; margin: 5px auto 0; min-height: 23px; padding: 3px 8px; border-radius: 6px; color: var(--widget-muted, #94a3b8) !important; font-size: 9px !important; }
+.island-calendar-today:hover { background: var(--widget-raised, #121620); color: var(--widget-text, #f8fafc) !important; }
+@container (max-width: 400px) {
+  .island-agenda-layout { grid-template-columns: minmax(110px, 1fr) minmax(190px, 1.6fr); gap: 12px; }
+  .island-agenda-summary { padding-right: 9px; }
+  .island-agenda-clock { font-size: 27px; }
+}
+@container (max-width: 320px) {
+  .island-agenda-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .island-agenda-summary { min-height: 0; padding-right: 0; border-right: 0; }
+  .island-agenda-empty { max-width: none; }
+  .island-calendar-week button { min-height: 25px; }
+}
 .island-task-selection { display: flex; flex-direction: column; gap: 5px; margin: 10px 0 0; }
 .island-task-selection > label { font-size: 9px; color: var(--widget-muted, #94a3b8); }
 .island-task-selection > select { width: 100%; min-width: 0; min-height: 30px; padding: 5px 8px; border: 1px solid var(--widget-line, #1e2633); border-radius: 8px; background: var(--widget-raised, #121620); color: var(--widget-text, #f8fafc); font: inherit; font-size: 10px; }
@@ -42,4 +86,4 @@
 .island-task-selection > select:disabled { opacity: .65; }
 .island-task-selection > p { font-size: 9px; line-height: 1.5; color: var(--widget-muted, #94a3b8); margin: 0; }
 @keyframes island-today-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .island-today-indicator, .island-today-check { transition: none; } .island-today-spinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .island-today-indicator, .island-today-check, .island-calendar-week button { transition: none; } .island-today-spinner { animation: none; } }

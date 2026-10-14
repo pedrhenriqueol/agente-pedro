@@ -7,6 +7,7 @@ mod island_visibility;
 mod desktop_integration;
 mod diagnostics;
 mod dock_visibility;
+mod top_controls;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -29,8 +30,8 @@ fn startup_status(window: tauri::WebviewWindow, stage: StartupStage, message: Op
 }
 
 // The native bounds include the 12 logical pixels used by each widget's shadow.
-const ISLAND_WIDTH: f64 = 404.0;
-const ISLAND_COMPACT_HEIGHT: f64 = 72.0;
+const ISLAND_WIDTH: f64 = 120.0;
+const ISLAND_COMPACT_HEIGHT: f64 = 48.0;
 const ISLAND_EXPANDED_HEIGHT: f64 = 424.0;
 const DOCK_WIDTH: f64 = 450.0;
 const DOCK_HEIGHT: f64 = 88.0;
@@ -42,13 +43,37 @@ pub fn centralizar_ilha_topo(app: &AppHandle) {
         if let Some(monitor) = monitor {
             let scale = monitor.scale_factor();
             let area = monitor.work_area();
-            let width = (ISLAND_WIDTH * scale).round() as i32;
+            let width = janela.outer_size().map(|size| size.width as i32)
+                .unwrap_or_else(|_| (ISLAND_WIDTH * scale).round() as i32);
             let x = area.position.x + (area.size.width as i32 - width) / 2;
-            // The visible capsule starts 12px inside the transparent native frame.
+            // The surface attaches to the work-area top; its shadow margin is below.
             let y = area.position.y + (2.0 * scale).round() as i32;
             let _ = janela.set_position(PhysicalPosition::new(x, y));
         }
     }
+}
+
+/// Prepare the complete native frame before React starts its size animation.
+/// Position and dimensions use the current monitor's work area, including DPI.
+pub(crate) fn resize_island_frame(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() {
+        return Err("Dimensões inválidas para a ilha.".into());
+    }
+    let island = app.get_webview_window("island")
+        .ok_or_else(|| "A ilha não está disponível.".to_string())?;
+    let monitor = island.current_monitor().map_err(|error| error.to_string())?
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "O monitor da ilha não está disponível.".to_string())?;
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let width = width.clamp(96.0, 664.0).min(f64::from(area.size.width) / scale);
+    let height = height.clamp(ISLAND_COMPACT_HEIGHT, ISLAND_EXPANDED_HEIGHT)
+        .min((f64::from(area.size.height) / scale - 2.0).max(1.0));
+    let physical_width = (width * scale).round() as i32;
+    let x = area.position.x + (area.size.width as i32 - physical_width) / 2;
+    let y = area.position.y + (2.0 * scale).round() as i32;
+    island.set_position(PhysicalPosition::new(x, y)).map_err(|error| error.to_string())?;
+    island.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())
 }
 
 pub fn centralizar_dock_base(app: &AppHandle) {
@@ -105,26 +130,33 @@ fn abrir_painel(app: AppHandle, page: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn expandir_ilha(app: AppHandle, altura: f64) -> Result<(), String> {
-    if !altura.is_finite() {
-        return Err("Altura inválida.".into());
-    }
+fn island_available_width(app: AppHandle) -> Result<f64, String> {
     let island = app.get_webview_window("island")
         .ok_or_else(|| "A ilha não está disponível.".to_string())?;
-    if !island_visibility::is_visible(app.state::<island_visibility::IslandVisibilityState>().inner())
-        || !island.is_visible().map_err(|error| error.to_string())? {
-        return Err("A ilha está escondida. Revele-a pelo topo para expandir.".into());
-    }
-    let height = altura.clamp(ISLAND_COMPACT_HEIGHT, ISLAND_EXPANDED_HEIGHT);
-    island.set_size(LogicalSize::new(ISLAND_WIDTH, height)).map_err(|error| error.to_string())
+    let monitor = island.current_monitor().map_err(|error| error.to_string())?
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "O monitor da ilha não está disponível.".to_string())?;
+    Ok(f64::from(monitor.work_area().size.width) / monitor.scale_factor())
 }
 
 #[tauri::command]
-fn recolher_ilha(app: AppHandle) -> Result<(), String> {
-    let island = app.get_webview_window("island")
-        .ok_or_else(|| "A ilha não está disponível.".to_string())?;
-    island.set_size(LogicalSize::new(ISLAND_WIDTH, ISLAND_COMPACT_HEIGHT))
-        .map_err(|error| error.to_string())
+fn expandir_ilha(app: AppHandle, altura: f64, largura: Option<f64>) -> Result<(), String> {
+    let state = app.try_state::<island_visibility::IslandVisibilityState>()
+        .ok_or_else(|| "A visibilidade da ilha ainda está iniciando.".to_string())?;
+    if !island_visibility::is_visible(state.inner()) {
+        return Err("A ilha está escondida. Revele-a pelo topo para expandir.".into());
+    }
+    resize_island_frame(&app, largura.unwrap_or(584.0), altura)
+}
+
+#[tauri::command]
+fn recolher_ilha(app: AppHandle, altura: Option<f64>, largura: Option<f64>) -> Result<(), String> {
+    let width = largura.unwrap_or(ISLAND_WIDTH);
+    let height = altura.unwrap_or(ISLAND_COMPACT_HEIGHT);
+    let state = app.try_state::<island_visibility::IslandVisibilityState>()
+        .ok_or_else(|| "A visibilidade da ilha ainda está iniciando.".to_string())?;
+    island_visibility::remember_compact_frame(state.inner(), width, height)?;
+    resize_island_frame(&app, width, height)
 }
 
 #[tauri::command]
@@ -146,6 +178,7 @@ pub fn run() {
         .manage(desktop_integration::TaskbarState::default())
         .manage(desktop_integration::DesktopLaunchState::default())
         .manage(dock_visibility::DockVisibilityState::default())
+        .manage(top_controls::TopControlsState::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| desktop_integration::handle_launch_args(app, &args)))
         .manage(media::MediaState::default())
         .manage(island_visibility::IslandVisibilityState::default())
@@ -168,14 +201,17 @@ pub fn run() {
             alternar_console,
             abrir_painel,
             expandir_ilha,
+            island_available_width,
             recolher_ilha,
             reposicionar_ilha,
             configurar_dock,
+            top_controls::configure_top_control,
             media::media_snapshot,
             media::media_control,
             island_visibility::configure_island_visibility,
             island_visibility::island_activity,
             island_visibility::island_visibility_snapshot,
+            island_visibility::complete_island_visibility_transition,
             desktop_integration::configure_desktop_menu,
             desktop_integration::apply_window_material,
             desktop_integration::focus_taskbar_progress,
@@ -201,6 +237,7 @@ pub fn run() {
             diagnostics::write("media", "Iniciando serviço de música");
             media::start(&handle);
             centralizar_ilha_topo(&handle);
+            top_controls::init(&handle);
             diagnostics::write("visibility", "Iniciando visibilidade da ilha");
             island_visibility::start(&handle);
             centralizar_dock_base(&handle);

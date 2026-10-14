@@ -7,12 +7,12 @@
   color-scheme: dark;
   --bg: #05070a; --surface: #0c0e14; --raised: #121620; --line: #1e2633;
   --text: #f8fafc; --muted: #94a3b8; --accent: #10b981; --accent-soft: #10b98118;
-  --danger: #ef4444; --warning: #f59e0b; --accent-industrial: var(--accent);
+  --accent-contrast: #05070a; --danger: #ef4444; --warning: #f59e0b; --accent-industrial: var(--accent);
   --text-primary: var(--text); --text-muted: var(--muted);
 }
 :root[data-theme='light'] {
   color-scheme: light; --bg: #f1f3ef; --surface: #fff; --raised: #e9eee8; --line: #d4ddd3;
-  --text: #1b2b22; --muted: #52685c; --accent: #157453; --accent-soft: #15745312; --danger: #b32c38; --warning: #855416;
+  --text: #1b2b22; --muted: #52685c; --accent: #157453; --accent-soft: #15745312; --accent-contrast: #fff; --danger: #b32c38; --warning: #855416;
 }
 :root[data-accent='violet'] { --accent: #bca7ff; --accent-soft: #bca7ff18; }
 :root[data-accent='blue'] { --accent: #92c2ff; --accent-soft: #92c2ff18; }
@@ -45,8 +45,8 @@ input, textarea, select { accent-color: var(--accent); }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
 .panel-heading p { margin-top: 6px; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 40px; padding: 10px 15px; border-radius: 10px; border: 1px solid transparent; font-weight: 550; font-size: 13px; text-decoration: none; transition: background .16s, border-color .16s, transform .16s; color: var(--text); background: transparent; }
-.button.primary { background: var(--accent); color: #102b21; }
-:root[data-theme='light'] .button.primary { color: #fff; }
+.button.primary { background: var(--accent); color: var(--accent-contrast, #05070a); }
+:root[data-theme='light'] .button.primary { color: var(--accent-contrast, #fff); }
 .button.primary:hover:not(:disabled) { filter: brightness(1.08); }
 .button.secondary { border-color: var(--line); background: var(--raised); }
 .button.secondary:hover:not(:disabled), .button.ghost:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--line); }

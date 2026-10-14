@@ -1,9 +1,10 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { LoaderCircle, Music2, Pause, Play, RefreshCw, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
 import { useMediaStore } from '../stores/useMediaStore';
 import type { MediaSession } from '../services/mediaClient';
 import '../styles/music.css';
+import '../styles/music-island.css';
 
 type MediaAction = 'play' | 'pause' | 'next' | 'previous' | 'volume';
 
@@ -23,6 +24,7 @@ function sourceLabel(source: string): string {
   if (app.includes('chrome')) return 'Google Chrome';
   if (app.includes('firefox')) return 'Firefox';
   if (app.includes('brave')) return 'Brave';
+  if (app.includes('opera')) return 'Opera';
   if (app.includes('spotify')) return 'Spotify';
   return source || 'Player do Windows';
 }
@@ -93,7 +95,9 @@ function sameTrack(left: MediaSession, right: MediaSession): boolean {
 }
 
 /** Stable artwork/text containers keep their place while metadata crossfades. */
-function TrackIdentity({ session, compact }: { session: MediaSession; compact: boolean }) {
+function TrackIdentity({ session, compact, layout = 'default', children }: {
+  session: MediaSession; compact: boolean; layout?: 'default' | 'island'; children?: ReactNode;
+}) {
   const previous = useRef(session);
   const [outgoing, setOutgoing] = useState<MediaSession | null>(null);
   const [transition, setTransition] = useState(0);
@@ -113,12 +117,14 @@ function TrackIdentity({ session, compact }: { session: MediaSession; compact: b
     const image = track.artwork;
     return image && !failedArtwork.includes(image)
       ? <img src={image} alt="" onError={() => setFailedArtwork(values => values.includes(image) ? values : [...values.slice(-3), image])} />
-      : <Music2 size={compact ? 22 : 38} strokeWidth={1.4} aria-hidden="true" />;
+      : <Music2 size={layout === 'island' ? 28 : compact ? 22 : 38} strokeWidth={1.4} aria-hidden="true" />;
   };
   const text = (track: MediaSession) => <>
     <h2 title={track.title || 'Faixa em reprodução'}>{track.title || 'Faixa em reprodução'}</h2>
-    <p title={track.artist || 'Artista não informado'}>{track.artist || 'Artista não informado'}</p>
-    {!compact && <span className="music-source" title={track.sourceApp}>{sourceLabel(track.sourceApp)}</span>}
+    <p title={layout === 'island' ? `${track.artist || 'Artista não informado'} · ${sourceLabel(track.sourceApp)}` : track.artist || 'Artista não informado'}>
+      {track.artist || 'Artista não informado'}{layout === 'island' && <><span aria-hidden="true"> · </span>{sourceLabel(track.sourceApp)}</>}
+    </p>
+    {!compact && layout !== 'island' && <span className="music-source" title={track.sourceApp}>{sourceLabel(track.sourceApp)}</span>}
   </>;
 
   return <>
@@ -129,13 +135,14 @@ function TrackIdentity({ session, compact }: { session: MediaSession; compact: b
     <div className="music-track-info">
       <div key={transition} className={`music-track-current${outgoing ? ' is-arriving' : ''}`} aria-live="polite" aria-atomic="true">{text(session)}</div>
       {outgoing && <div className="music-track-outgoing is-outgoing" aria-hidden="true">{text(outgoing)}</div>}
+      {children}
     </div>
   </>;
 }
 
 /** The same real Windows session is shown in the dashboard and the island. */
-export function MusicPlayer({ compact = false, showVolume = true, showIdentity = true }: {
-  compact?: boolean; showVolume?: boolean; showIdentity?: boolean;
+export function MusicPlayer({ compact = false, showVolume = true, showIdentity = true, layout = 'default' }: {
+  compact?: boolean; showVolume?: boolean; showIdentity?: boolean; layout?: 'default' | 'island';
 }) {
   const { snapshot, displaySession, presentationPhase, initialized, observedAt, pending, error, controlMedia, refreshMedia, clearError } = useMediaStore(useShallow(state => ({
     snapshot: state.snapshot, initialized: state.initialized, observedAt: state.observedAt, pending: state.pending, error: state.error,
@@ -168,6 +175,62 @@ export function MusicPlayer({ compact = false, showVolume = true, showIdentity =
   const position = hasTimeline ? Math.max(0, Math.min(session.positionSeconds! + elapsed, session.durationSeconds!)) : 0;
   const progress = hasTimeline ? position / session.durationSeconds! * 100 : 0;
 
+  const island = layout === 'island';
+  const smallControls = compact || island;
+  const transport = session && <div className="music-transport" role="group" aria-label="Controles da música">
+    <button className="music-transport-button" type="button" disabled={pending || !ready || !session.canGoPrevious}
+      onClick={() => run('previous')} aria-label="Música anterior" title={session.canGoPrevious ? 'Música anterior' : 'Música anterior indisponível neste player'}>
+      <SkipBack size={smallControls ? 16 : 20} fill="currentColor" aria-hidden="true" />
+    </button>
+    <button className="music-transport-button is-primary" type="button" disabled={pending || !primaryAllowed}
+      onClick={() => run(pauseAction ? 'pause' : 'play')} aria-label={pauseAction ? 'Pausar música' : 'Reproduzir música'}
+      title={primaryAllowed ? pauseAction ? 'Pausar música' : 'Reproduzir música' : 'Reprodução indisponível neste player'}>
+      {pending || updating ? <LoaderCircle className="music-loading-icon" size={smallControls ? 17 : 22} aria-hidden="true" />
+        : pauseAction ? <Pause size={smallControls ? 17 : 22} fill="currentColor" aria-hidden="true" /> : <Play size={smallControls ? 17 : 22} fill="currentColor" aria-hidden="true" />}
+    </button>
+    <button className="music-transport-button" type="button" disabled={pending || !ready || !session.canGoNext}
+      onClick={() => run('next')} aria-label="Próxima música" title={session.canGoNext ? 'Próxima música' : 'Próxima música indisponível neste player'}>
+      <SkipForward size={smallControls ? 16 : 20} fill="currentColor" aria-hidden="true" />
+    </button>
+  </div>;
+  const timeline = hasTimeline && <div className="music-timeline">
+    <div className="music-progress" role="progressbar" aria-label="Progresso da música" aria-valuemin={0} aria-valuemax={100}
+      aria-valuenow={Math.round(progress)} aria-valuetext={`${formatTime(position)} de ${formatTime(session!.durationSeconds!)}`}>
+      <span style={{ width: `${progress}%` }} />
+    </div>
+    {(!compact || island) && <div className="music-time"><span>{formatTime(position)}</span><span>{formatTime(session!.durationSeconds!)}</span></div>}
+  </div>;
+  const volume = showVolume && canUseVolume && <SystemVolume volume={snapshot.volume!} muted={snapshot.muted} controlMedia={controlMedia} />;
+  const errorNotice = failure && <div className="music-player-error" role="alert">
+    <p title={failure}>{failure}</p>
+    <button type="button" className="music-error-action" disabled={pending} onClick={retry} aria-label="Tentar atualizar música novamente" title="Tentar novamente"><RefreshCw size={13} aria-hidden="true" />{!compact && !island && <span>Tentar novamente</span>}</button>
+    {error && !snapshot.error && <button type="button" className="music-error-action" onClick={clearError} aria-label="Fechar mensagem de erro" title="Fechar mensagem"><X size={13} aria-hidden="true" /></button>}
+  </div>;
+
+  if (island) return <div className={`music-player is-island${updating ? ' is-updating' : ''}`} role="group" aria-label="Player de música" aria-busy={pending || updating} data-presentation={presentationPhase}>
+    {session ? <div className="music-island-row">
+      <div className="music-island-track">
+        <TrackIdentity session={session} compact layout="island">{timeline}</TrackIdentity>
+      </div>
+      <div className="music-island-controls">
+        {transport}
+        {volume}
+      </div>
+      <span className="music-island-state" role="status">{status}</span>
+    </div> : <div className="music-island-empty-row">
+      <div className="music-player-empty" role="status">
+        <div className="music-empty-mark">{!initialized ? <LoaderCircle size={23} className="music-loading-icon" aria-hidden="true" /> : <Music2 size={23} strokeWidth={1.4} aria-hidden="true" />}</div>
+        <div><h2>{!initialized ? 'Buscando sua música…' : failure ? 'Reprodução indisponível' : !snapshot.supported ? 'Sua música, no Windows' : 'Nada tocando'}</h2>
+          <p>{!initialized ? 'Preparando os controles de reprodução.' : failure ? 'Atualize a reprodução para tentar novamente.' : !snapshot.supported
+            ? 'Os controles ficam disponíveis no aplicativo para Windows.' : 'Dê play no SoundCloud, no navegador ou em outro aplicativo.'}</p>
+        </div>
+      </div>
+      {volume && <div className="music-island-controls is-volume-only">{volume}</div>}
+      {!volume && initialized && snapshot.supported && !failure && <button className="music-island-refresh" type="button" disabled={pending} onClick={retry} aria-label="Buscar reprodução" title="Buscar reprodução"><RefreshCw size={15} aria-hidden="true" /></button>}
+    </div>}
+    {errorNotice}
+  </div>;
+
   return <div className={`music-player${compact ? ' is-compact' : ''}${updating ? ' is-updating' : ''}`} role="group" aria-label="Player de música" aria-busy={pending || updating} data-presentation={presentationPhase}>
     {session ? <>
       {!compact && <div className="music-player-topline"><span className="eyebrow">Sua trilha do dia</span>
@@ -176,29 +239,8 @@ export function MusicPlayer({ compact = false, showVolume = true, showIdentity =
         <TrackIdentity session={session} compact={compact} />
         {compact && <span className={`music-compact-status${playing ? ' is-playing' : ''}${updating ? ' is-updating' : ''}`} role="status" title={status} aria-label={status} />}
       </div>}
-      <div className="music-transport" role="group" aria-label="Controles da música">
-        <button className="music-transport-button" type="button" disabled={pending || !ready || !session.canGoPrevious}
-          onClick={() => run('previous')} aria-label="Música anterior" title={session.canGoPrevious ? 'Música anterior' : 'Música anterior indisponível neste player'}>
-          <SkipBack size={compact ? 17 : 20} fill="currentColor" aria-hidden="true" />
-        </button>
-        <button className="music-transport-button is-primary" type="button" disabled={pending || !primaryAllowed}
-          onClick={() => run(pauseAction ? 'pause' : 'play')} aria-label={pauseAction ? 'Pausar música' : 'Reproduzir música'}
-          title={primaryAllowed ? pauseAction ? 'Pausar música' : 'Reproduzir música' : 'Reprodução indisponível neste player'}>
-          {pending || updating ? <LoaderCircle className="music-loading-icon" size={compact ? 17 : 22} aria-hidden="true" />
-            : pauseAction ? <Pause size={compact ? 17 : 22} fill="currentColor" aria-hidden="true" /> : <Play size={compact ? 17 : 22} fill="currentColor" aria-hidden="true" />}
-        </button>
-        <button className="music-transport-button" type="button" disabled={pending || !ready || !session.canGoNext}
-          onClick={() => run('next')} aria-label="Próxima música" title={session.canGoNext ? 'Próxima música' : 'Próxima música indisponível neste player'}>
-          <SkipForward size={compact ? 17 : 20} fill="currentColor" aria-hidden="true" />
-        </button>
-      </div>
-      {hasTimeline && <div className="music-timeline">
-        <div className="music-progress" role="progressbar" aria-label="Progresso da música" aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={Math.round(progress)} aria-valuetext={`${formatTime(position)} de ${formatTime(session.durationSeconds!)}`}>
-          <span style={{ width: `${progress}%` }} />
-        </div>
-        {!compact && <div className="music-time"><span>{formatTime(position)}</span><span>{formatTime(session.durationSeconds!)}</span></div>}
-      </div>}
+      {transport}
+      {timeline}
     </> : <div className="music-player-empty" role="status">
       <div className="music-empty-mark">{!initialized ? <LoaderCircle size={compact ? 23 : 34} className="music-loading-icon" aria-hidden="true" /> : <Music2 size={compact ? 23 : 34} strokeWidth={1.4} aria-hidden="true" />}</div>
       <div><h2>{!initialized ? 'Buscando sua música…' : failure ? 'A música está indisponível' : !snapshot.supported ? 'Sua música, no Windows' : 'Sua próxima trilha começa aqui'}</h2>
@@ -208,11 +250,7 @@ export function MusicPlayer({ compact = false, showVolume = true, showIdentity =
         {!compact && initialized && snapshot.supported && <button className="button ghost small music-refresh" type="button" disabled={pending} onClick={retry}><RefreshCw size={14} aria-hidden="true" />Buscar reprodução</button>}
       </div>
     </div>}
-    {showVolume && canUseVolume && <SystemVolume volume={snapshot.volume!} muted={snapshot.muted} controlMedia={controlMedia} />}
-    {failure && <div className="music-player-error" role="alert">
-      <p title={failure}>{failure}</p>
-      <button type="button" className="music-error-action" disabled={pending} onClick={retry} aria-label="Tentar atualizar música novamente" title="Tentar novamente"><RefreshCw size={13} aria-hidden="true" />{!compact && <span>Tentar novamente</span>}</button>
-      {error && !snapshot.error && <button type="button" className="music-error-action" onClick={clearError} aria-label="Fechar mensagem de erro" title="Fechar mensagem"><X size={13} aria-hidden="true" /></button>}
-    </div>}
+    {volume}
+    {errorNotice}
   </div>;
 }

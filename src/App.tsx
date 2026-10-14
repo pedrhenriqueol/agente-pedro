@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { ArrowUpRight, RefreshCw } from 'lucide-react';
 import { DynamicIsland } from './components/DynamicIsland';
 import { DesktopDock } from './components/DesktopDock';
+import { DesktopTopControls } from './components/DesktopTopControls';
 import { MainDashboard } from './components/MainDashboard';
 import { useFocusStore } from './stores/useFocusStore';
 import { useFinanceStore } from './stores/useFinanceStore';
@@ -14,6 +15,7 @@ import { initializeMedia } from './stores/useMediaStore';
 import { initializeIslandVisibility, useIslandVisibilityStore } from './stores/useIslandVisibilityStore';
 import { applyPanelMaterial, configureDesktopMenu, initialDesktopPage, updateFocusProgress } from './services/nativeDesktop';
 import { useControlFeedback } from './hooks/useControlFeedback';
+import { resolveAccentColor, resolveAccentForeground } from './lib/preferenceAppearance';
 import { reportStartupStatus } from './services/startupDiagnostics';
 
 export default function App() {
@@ -28,7 +30,7 @@ export default function App() {
   const totalDuration = useFocusStore(state => state.totalDurationSeconds);
   const islandVisibility = useIslandVisibilityStore(state => state.snapshot);
   useEffect(() => {
-    if (label !== 'island') return;
+    if (label !== 'island' && label !== 'top-left' && label !== 'top-right') return;
     let cancelled = false;
     let dispose: (() => void) | undefined;
     void initializeIslandVisibility().then(cleanup => { if (cancelled) cleanup(); else dispose = cleanup; });
@@ -82,6 +84,10 @@ export default function App() {
       const theme = preferences.theme === 'system' ? (scheme.matches ? 'dark' : 'light') : preferences.theme;
       document.documentElement.dataset.theme = theme;
       document.documentElement.dataset.accent = preferences.accent;
+      const accent = resolveAccentColor(preferences, theme === 'light');
+      document.documentElement.style.setProperty('--accent', accent);
+      document.documentElement.style.setProperty('--accent-soft', `${accent}${theme === 'light' ? '13' : '18'}`);
+      document.documentElement.style.setProperty('--accent-contrast', resolveAccentForeground(accent));
       document.documentElement.dataset.reducedMotion = String(preferences.reduceMotion || motion.matches);
       if (label === 'main') {
         const request = ++sequence;
@@ -92,7 +98,7 @@ export default function App() {
     };
     apply(); scheme.addEventListener('change', apply); motion.addEventListener('change', apply);
     return () => { cancelled = true; scheme.removeEventListener('change', apply); motion.removeEventListener('change', apply); };
-  }, [label, preferences.theme, preferences.accent, preferences.reduceMotion, preferences.nativeMaterial]);
+  }, [label, preferences.theme, preferences.accent, preferences.customAccent, preferences.reduceMotion, preferences.nativeMaterial]);
   useEffect(() => {
     if (label === 'main') void configureDesktopMenu(preferences.islandVisibility, preferences.dockEnabled).catch(() => {});
   }, [label, preferences.islandVisibility, preferences.dockEnabled]);
@@ -125,6 +131,12 @@ export default function App() {
       void reportStartupStatus('frontend_error', error);
     });
   }, [label, preferences.dockEnabled]);
+  if (label === 'top-left' || label === 'top-right') {
+    // Each corner component owns the native bounds and starts only after data is ready.
+    // The HWND stays hidden during startup/error; no transparent boot overlay is shown.
+    if (phase !== 'ready') return null;
+    return <DesktopTopControls side={label === 'top-left' ? 'left' : 'right'} />;
+  }
   if (label === 'island' || label === 'dock') {
     if (phase !== 'ready') return <div className={`desktop-widget-shell ${label}-shell`}
       aria-hidden={label === 'island' && !islandVisibility.visible} inert={label === 'island' && !islandVisibility.visible || undefined}>

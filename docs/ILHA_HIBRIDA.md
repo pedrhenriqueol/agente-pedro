@@ -33,3 +33,13 @@ Os testes automatizados verificam preferências, IPC, decisões de inatividade/r
 4. Maximize um navegador e teste também F11; confirme que a ilha se esconde sem interromper música ou foco. Aproxime novamente do lugar da ilha para usar um controle, depois deixe-a se esconder.
 5. Alterne para Fixa e confirme a restauração. Revele sem mudar o aplicativo em primeiro plano.
 6. Repita com diferentes DPI/monitores e janela expandida; não deve aparecer uma expansão antiga após recolher ou entrar em tela cheia.
+
+## Ilha contextual e transições (2026-10-13)
+
+A ilha em repouso agora usa uma pequena forma no topo; música/foco usam uma faixa compacta. A aproximação por 120ms expande Hoje ou a atividade atual. Ao sair, o conteúdo recolhe após uma pausa curta; teclado e campos em uso preservam a interação. A opção **Expandir ao aproximar o mouse** pode ser desligada. Pequena/Média/Grande escolhem a largura expandida, independentemente do pequeno viewport da janela em repouso.
+
+A ocultação híbrida e a redução ao compacto são estados distintos: o modo Fixo recolhe o conteúdo ao sair, mantendo a forma disponível; o modo Híbrido também esconde a janela após o prazo configurado. Antes do hide físico, a interface fica inerte, o HWND libera cliques e a superfície anima para cima. Confirmação por geração ou timeout conclui a ocultação. O retorno prepara o frame compacto e mantém sua primeira pintura transparente até a animação, sem ativar o aplicativo.
+
+Os dois controles dos cantos têm janelas próprias pequenas: aparência/atalhos/tarefas à esquerda e volume à direita. **Controles nos cantos** permite desligá-los. Eles acompanham o hide da ilha e não deixam uma janela invisível interceptando o desktop. Hover ou teclado no popup contam como interação. O controle de volume continua usando Core Audio.
+
+Para conferir a nova entrega no Windows, teste também o desligamento dos cantos sobre outro aplicativo, abrir/fechar os popups rapidamente e alterar o tamanho enquanto a ilha está expandida. Repita a saída/volta do mouse com música tocando e com a faixa pausada. Consulte [SYSTEM_DESIGN_ISLAND_REDESIGN.md](SYSTEM_DESIGN_ISLAND_REDESIGN.md) e [DESIGN_REPORT_ISLAND_REDESIGN.md](DESIGN_REPORT_ISLAND_REDESIGN.md).
