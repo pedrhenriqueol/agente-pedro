@@ -1,16 +1,13 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { Moon, Sun, Monitor, Palette, RotateCcw, Clock3, Focus, Wallet, Minus, Eye, EyeOff, Sparkles, Navigation, Accessibility, ChevronDown, Music2, Pause, Play, PanelLeftClose, Layers, LayoutGrid, Volume2 } from 'lucide-react';
+import { useRef, useState, type KeyboardEvent } from 'react';
+import { Moon, Sun, Monitor, Palette, Clock3, Focus, Wallet, Minus, Eye, EyeOff, Sparkles, Navigation, Accessibility, PanelLeftClose, Layers } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
 import { RetainedTransition } from './ui/PageTransition';
 import { SelectionIndicator } from './ui/SelectionIndicator';
 import { AnimatedDisclosure } from './ui/AnimatedDisclosure';
-import { PedroMascot } from './PedroMascot';
+import { AppearancePreview } from './AppearancePreview';
 import '../styles/appearance-motion.css';
 import '../styles/appearance-redesign.css';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
-import { useFocusStore } from '../stores/useFocusStore';
-import { formatCentsToBRL, useFinanceStore } from '../stores/useFinanceStore';
-import { useMediaStore } from '../stores/useMediaStore';
 import { ACCENT_COLORS } from '../lib/preferenceAppearance';
 
 const sections = [
@@ -20,7 +17,6 @@ const sections = [
   { id: 'accessibility', label: 'Acessibilidade', Icon: Accessibility },
 ] as const;
 type Section = typeof sections[number]['id'];
-type Preview = 'current' | 'focus' | 'music' | 'idle';
 const visibilityOptions = [
   { value: 'fixed', label: 'Fixa', detail: 'Sempre por perto no desktop.', Icon: Eye },
   { value: 'hybrid', label: 'Híbrida', detail: 'Sai de cena quando você usa outros apps.', Icon: EyeOff },
@@ -51,39 +47,10 @@ const accentOptions = [
 
 export function AppearancePage() {
   const p = usePreferencesStore();
-  const focus = useFocusStore();
-  const finance = useFinanceStore();
-  const media = useMediaStore();
   const [section, setSection] = useState<Section>('island');
-  const [preview, setPreview] = useState<Preview>('current');
-  const [time, setTime] = useState(() => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
-  const [failedArtwork, setFailedArtwork] = useState<string | null>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabStrip = useRef<HTMLDivElement>(null);
   const hybrid = p.islandVisibility === 'hybrid';
-  const active = focus.pomodoroState === 'focus' || focus.pomodoroState === 'break';
-  const focusPresent = active || focus.pomodoroState === 'paused' || focus.sessionSaveState === 'saving' || focus.sessionSaveState === 'error';
-  const session = media.displaySession;
-  const currentMode = focusPresent ? 'focus' : session ? 'music' : focus.pomodoroState === 'completed' ? 'focus' : p.islandIdle;
-  const previewMode = preview === 'current' ? currentMode : preview === 'idle' ? p.islandIdle : preview;
-  const seconds = Math.max(0, Math.floor(focus.remainingSeconds));
-  const timer = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-  const selectedTask = focus.tasks.find(task => task.id === focus.selectedTaskId && task.completed === 0);
-  const focusStatus = focus.sessionSaveState === 'error' ? 'Registro pendente' : focus.sessionSaveState === 'saving' ? 'Registrando sessão…'
-    : focus.pomodoroState === 'paused' ? 'Sessão pausada' : focus.pomodoroState === 'completed' ? 'Sessão concluída'
-      : active ? focus.currentMode === 'break' ? 'Pausa em andamento' : 'Foco em andamento' : 'Sua próxima sessão';
-  const musicStatus = media.presentationPhase === 'updating' ? 'Atualizando faixa…' : media.presentationPhase === 'unavailable' ? 'Reprodução indisponível'
-    : media.presentationPhase === 'loading' ? 'Buscando reprodução…' : session?.playbackStatus === 'playing' ? 'Em reprodução'
-      : session?.playbackStatus === 'paused' ? 'Pausado' : session ? 'Sua música' : 'Aguardando reprodução';
-  const emptyMusicTitle = media.presentationPhase === 'unavailable' ? 'Reprodução indisponível' : media.presentationPhase === 'loading' ? 'Buscando reprodução…' : 'Sua música, por perto';
-  const progress = Math.max(0, Math.min(1, focus.totalDurationSeconds > 0 ? 1 - focus.remainingSeconds / focus.totalDurationSeconds : 0));
-  const artwork = session?.artwork && session.artwork !== failedArtwork ? session.artwork : null;
-  const previewHasActivity = previewMode === 'focus' || previewMode === 'music' || previewMode === 'balance';
-
-  useEffect(() => {
-    const interval = window.setInterval(() => setTime(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })), 10000);
-    return () => window.clearInterval(interval);
-  }, []);
 
   function moveTab(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     let target: number;
@@ -194,32 +161,7 @@ export function AppearancePage() {
         </RetainedTransition>
       </div>
 
-      <aside className="settings-preview" aria-label="Prévia das preferências"><div className="panel">
-        <span className="eyebrow">Pedro, por perto</span><h2>Uma presença tranquila</h2>
-        <div className="settings-preview-switch" role="group" aria-label="Conteúdo da prévia">{([
-          { value: 'current', label: 'Agora' }, { value: 'focus', label: 'Foco' }, { value: 'music', label: 'Música' }, { value: 'idle', label: 'Repouso' },
-        ] as const).map(option => <button type="button" key={option.value} aria-pressed={preview === option.value} onClick={() => setPreview(option.value)}>{option.label}</button>)}</div>
-        <div className="settings-preview-desktop settings-redesign-preview" data-island-tone={p.islandTone} data-island-size={p.islandSize} data-top-controls={p.topControlsEnabled}
-          style={{ '--settings-preview-opacity': p.islandOpacity } as CSSProperties}>
-          {p.topControlsEnabled && <div className="settings-preview-corners" aria-hidden="true"><span><Palette size={10} /><LayoutGrid size={10} /></span><span><Volume2 size={11} /></span></div>}
-          <div className="settings-preview-island" data-has-activity={previewHasActivity} aria-label="Prévia da ilha">
-            <PedroMascot className="settings-preview-monogram" />
-            <div className="settings-preview-context">{previewMode === 'music' ? <>
-              <span className="settings-preview-artwork">{artwork ? <img src={artwork} alt="" onError={() => setFailedArtwork(artwork)} /> : <Music2 size={15} aria-hidden="true" />}</span>
-              <span>{session?.title || (media.presentationPhase === 'loading' ? 'Buscando…' : media.presentationPhase === 'unavailable' ? 'Indisponível' : 'Sem reprodução')}</span><span className={'presence-dot' + (media.presentationPhase === 'ready' && session?.playbackStatus === 'playing' ? ' is-active' : '')} />
-            </> : previewMode === 'focus' ? <><span className={'presence-dot' + (active ? ' is-active' : '')} /><span>{focus.sessionSaveState === 'error' ? 'Registro pendente' : focus.sessionSaveState === 'saving' ? 'Registrando…' : focus.pomodoroState === 'completed' ? 'Concluído' : timer}</span></>
-              : previewMode === 'balance' ? <><Wallet size={14} aria-hidden="true" /><span>{finance.accounts.length ? formatCentsToBRL(finance.consolidated.total_balance_cents) : 'Suas finanças'}</span></>
-                : previewMode === 'minimal' ? null : <span>{time}</span>}</div>
-            {previewMode !== 'music' && previewMode !== 'minimal' && <ChevronDown size={10} className="muted" aria-hidden="true" />}
-          </div>
-          {previewMode === 'focus' && <div className="settings-preview-activity"><span className="settings-preview-caption">{focusStatus}</span><div className="settings-preview-focus"><strong>{timer}</strong><span className="settings-preview-play" aria-hidden="true">{active ? <Pause size={15} /> : <Play size={15} />}</span></div><p>{selectedTask?.title || (focus.currentMode === 'break' ? 'Respire. Você merece uma pausa.' : 'Escolha uma tarefa ou apenas comece.')}</p><div className="settings-preview-progress"><span style={{ transform: `scaleX(${progress})` }} /></div></div>}
-          {previewMode === 'music' && <div className="settings-preview-activity"><span className="settings-preview-caption">{musicStatus}</span><div className="settings-preview-track"><span className="settings-preview-artwork is-large">{artwork ? <img src={artwork} alt="" onError={() => setFailedArtwork(artwork)} /> : <Music2 size={23} aria-hidden="true" />}</span><div><strong>{session?.title || emptyMusicTitle}</strong><p>{session?.artist || (session ? 'Artista não informado' : 'Dê play no navegador para ver sua faixa aqui.')}</p></div></div></div>}
-          {p.dockEnabled && <div className="settings-preview-dock" aria-label="Dock ativado" style={{ '--settings-preview-dock-opacity': p.dockOpacity } as CSSProperties}><Sparkles size={14} /><Focus size={14} /><Music2 size={14} /><Wallet size={14} /></div>}
-        </div>
-        <div className="settings-preview-behavior"><span className="presence-dot" /><p>{hybrid ? `Híbrida · esconde após ${p.islandHideDelay} segundos sem interação` : 'Fixa · sempre visível no desktop'}</p></div>
-        <p className="muted">A prévia usa suas atividades reais. Foco e música continuam enquanto você ajusta o visual.</p>
-        <button className="button ghost settings-reset" type="button" onClick={p.resetPreferences}><RotateCcw size={14} />Restaurar preferências</button>
-      </div></aside>
+      <AppearancePreview />
     </div>
   </div>;
 }

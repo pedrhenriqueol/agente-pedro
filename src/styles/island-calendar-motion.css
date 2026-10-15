@@ -1,0 +1,4 @@
+.island-calendar-months { display: grid; position: relative; isolation: isolate; overflow: clip; overflow-clip-margin: 3px; }
+.island-calendar-month { min-width: 0; grid-area: 1 / 1; }
+.island-calendar-month[data-presence="active"] { z-index: 1; }
+.island-calendar-month[data-presence="leaving"] { z-index: 0; pointer-events: none; }

@@ -61,8 +61,8 @@ efeito. Não há som, confete ou novo popup.
 | --- | --- |
 | Busca instantânea por teclado | Implementado nesta entrega; útil sem acrescentar controles permanentes |
 | Confirmação localizada após salvar | Implementado; usa a área de feedback existente |
-| Prévia de aparência com botão para testar expansão | Boa candidata seguinte; demonstração restrita ao painel, sem disparar IPC ou controlar a música |
-| Passagem direcional entre meses da agenda | Adiada; altera altura da ilha e merece rodada própria de foco, reversões e limites nativos |
+| Prévia de aparência com botão para testar expansão | Implementada na [continuação](DESIGN_REPORT_INTERACTIVE_PREVIEW_CALENDAR.md); demonstração restrita ao painel, sem controlar as atividades |
+| Passagem direcional entre meses da agenda | Implementada na [continuação](DESIGN_REPORT_INTERACTIVE_PREVIEW_CALENDAR.md); a inspeção confirmou seis semanas fixas, preservando a altura da ilha |
 
 ## Validação
 

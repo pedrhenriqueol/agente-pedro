@@ -1,0 +1,395 @@
+{
+  "date": "2026-10-15",
+  "baseCommit": "7b4ac26d1ac66d9cfe8c51adddf8b035ecb32f38",
+  "scope": "Interactive appearance preview and fixed-height directional calendar month transitions",
+  "checks": {
+    "nodeTests": {
+      "pass": 109,
+      "fail": 0,
+      "skipped": 0
+    },
+    "productionBuild": "pass",
+    "windowsCrossCheck": {
+      "result": "pass",
+      "target": "x86_64-pc-windows-gnu",
+      "testsCompiled": true,
+      "windowsTestsExecuted": false
+    }
+  },
+  "previewProduction": {
+    "cases": 8,
+    "results": [
+      {
+        "name": "production initial CSS/ARIA, one reversible surface inside fixed desktop, stable focus/center, no persistence writes",
+        "pass": true
+      },
+      {
+        "name": "Escape and eleven 35ms reversals preserve drawn geometry without jumps/overflow",
+        "pass": true
+      },
+      {
+        "name": "context changes during expansion keep one accessible body and expanded geometry",
+        "pass": true
+      },
+      {
+        "name": "three sizes, enabled dock and 1280/760/390 layouts keep preview bounds and desktop height",
+        "pass": true
+      },
+      {
+        "name": "retained page hide/reveal preserves expanded state and measured width with no fallback reframe",
+        "pass": true
+      },
+      {
+        "name": "system and local reduced motion interrupt active geometry immediately, including unchanged targets",
+        "pass": true
+      },
+      {
+        "name": "document visibility interruption settles and allows a fresh opening",
+        "pass": true
+      },
+      {
+        "name": "light theme, no JavaScript/resource errors",
+        "pass": true
+      }
+    ],
+    "errors": [],
+    "widths": [
+      1280,
+      760,
+      390
+    ],
+    "rapidReversals": 11,
+    "desktopHeight": 236,
+    "expandedHeight": 166,
+    "visualReview": "Idle mascot and copy fit in the surface; sizing selector corrected to mascot span; state caption below expanded surface"
+  },
+  "previewLiveMetadata": {
+    "cases": 8,
+    "results": [
+      {
+        "name": "active focus uses real remaining time, selected task and 75% progress",
+        "time": "06:15",
+        "task": "Concluir orçamento trimestral",
+        "progress": 0.75
+      },
+      {
+        "name": "paused focus and session-save pending/error preserve real state",
+        "states": [
+          "paused",
+          "error",
+          "saving"
+        ]
+      },
+      {
+        "name": "current mode follows real music after focus completes",
+        "title": "Canção da janela",
+        "artist": "Artista do snapshot"
+      },
+      {
+        "name": "real artwork renders and failed artwork falls back without losing track",
+        "validImageCopies": 2,
+        "failedImageCopies": 0
+      },
+      {
+        "name": "paused/updating/loading/unavailable/empty media are truthful",
+        "phases": [
+          "ready-paused",
+          "updating-retained-title",
+          "loading",
+          "unavailable",
+          "empty"
+        ]
+      },
+      {
+        "name": "finance preview formats actual integer cents including negative balance",
+        "storedCents": -123456,
+        "display": "-R$ 1.234,56"
+      },
+      {
+        "name": "eight rapid preview toggles do not mutate stores, persistence or call actions",
+        "storeCount": 4,
+        "actionCalls": 0,
+        "toggles": 8
+      },
+      {
+        "name": "live track updates during opening keep geometry continuous and reach target",
+        "sampleCount": 24,
+        "firstHeight": 30,
+        "lastHeight": 166,
+        "lastMs": 391.7999999821186,
+        "maxRegression": 0
+      }
+    ],
+    "errors": []
+  },
+  "calendarProduction": {
+    "summary": {
+      "cases": 16,
+      "pass": 16,
+      "fail": 0,
+      "visibleFrameSamples": 1531,
+      "maxLayers": 2,
+      "minComposedOpacity": 0.659253,
+      "widths": [
+        480,
+        560,
+        640
+      ],
+      "calendarHeight": 217.6875,
+      "monthNavigationNativeResizes": 0,
+      "javascriptAndResourceErrors": 0
+    },
+    "results": [
+      {
+        "name": "12 settled months + stable geometry: small",
+        "pass": true,
+        "samples": 236,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.927626953135,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 480,
+        "months": [
+          "Novembro De 2026",
+          "Dezembro De 2026",
+          "Janeiro De 2027",
+          "Fevereiro De 2027",
+          "Março De 2027",
+          "Abril De 2027",
+          "Maio De 2027",
+          "Junho De 2027",
+          "Julho De 2027",
+          "Agosto De 2027",
+          "Setembro De 2027",
+          "Outubro De 2027"
+        ]
+      },
+      {
+        "name": "12 settled months + stable geometry: medium",
+        "pass": true,
+        "samples": 224,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.92762760663,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560,
+        "months": [
+          "Novembro De 2026",
+          "Dezembro De 2026",
+          "Janeiro De 2027",
+          "Fevereiro De 2027",
+          "Março De 2027",
+          "Abril De 2027",
+          "Maio De 2027",
+          "Junho De 2027",
+          "Julho De 2027",
+          "Agosto De 2027",
+          "Setembro De 2027",
+          "Outubro De 2027"
+        ]
+      },
+      {
+        "name": "12 settled months + stable geometry: large",
+        "pass": true,
+        "samples": 231,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.92762946133,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 640,
+        "months": [
+          "Novembro De 2026",
+          "Dezembro De 2026",
+          "Janeiro De 2027",
+          "Fevereiro De 2027",
+          "Março De 2027",
+          "Abril De 2027",
+          "Maio De 2027",
+          "Junho De 2027",
+          "Julho De 2027",
+          "Agosto De 2027",
+          "Setembro De 2027",
+          "Outubro De 2027"
+        ]
+      },
+      {
+        "name": "rapid ABA interval 5ms",
+        "pass": true,
+        "samples": 56,
+        "maxLayers": 2,
+        "minComposedOpacity": 1,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "rapid ABC interval 5ms",
+        "pass": true,
+        "samples": 66,
+        "maxLayers": 2,
+        "minComposedOpacity": 1,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "rapid ABA interval 15ms",
+        "pass": true,
+        "samples": 64,
+        "maxLayers": 2,
+        "minComposedOpacity": 1,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "rapid ABC interval 15ms",
+        "pass": true,
+        "samples": 85,
+        "maxLayers": 2,
+        "minComposedOpacity": 1,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "rapid ABA interval 30ms",
+        "pass": true,
+        "samples": 83,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.970291718738,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "rapid ABC interval 30ms",
+        "pass": true,
+        "samples": 119,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.659253,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "month direction has small translated entry/exit",
+        "pass": true,
+        "samples": 38,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.92764937011,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "keyboard clamp, Home/End/arrows and month-button focus",
+        "pass": true,
+        "samples": 93,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.927635321536,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560,
+        "clampedTo": 30,
+        "selectedBefore": "sábado, 31 de outubro de 2026",
+        "keys": [
+          {
+            "key": "Home",
+            "label": "domingo, 25 de outubro de 2026"
+          },
+          {
+            "key": "End",
+            "label": "sábado, 31 de outubro de 2026"
+          },
+          {
+            "key": "ArrowLeft",
+            "label": "sexta-feira, 30 de outubro de 2026"
+          },
+          {
+            "key": "ArrowRight",
+            "label": "sábado, 31 de outubro de 2026"
+          },
+          {
+            "key": "ArrowUp",
+            "label": "sábado, 24 de outubro de 2026"
+          },
+          {
+            "key": "ArrowDown",
+            "label": "sábado, 31 de outubro de 2026"
+          }
+        ]
+      },
+      {
+        "name": "reduced motion local midmonth",
+        "pass": true,
+        "samples": 15,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.939104281971,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "reduced motion system midmonth",
+        "pass": true,
+        "samples": 10,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.939236786693,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560
+      },
+      {
+        "name": "conceal during transition: collapse",
+        "pass": true,
+        "samples": 66,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.970202024284,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560,
+        "month": "2026-11",
+        "activeAfterReveal": true
+      },
+      {
+        "name": "conceal during transition: tab",
+        "pass": true,
+        "samples": 25,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.9276470162320001,
+        "calendarHeight": 217.6875,
+        "islandHeight": 321,
+        "islandWidth": 560,
+        "month": "2026-11",
+        "activeAfterReveal": true,
+        "tabGeometryResizes": 2
+      },
+      {
+        "name": "real task metadata, today, selected date, draft and DB preserved",
+        "pass": true,
+        "samples": 68,
+        "maxLayers": 2,
+        "minComposedOpacity": 0.927646380136,
+        "calendarHeight": 217.6875,
+        "islandHeight": 367,
+        "islandWidth": 560,
+        "selectedLabel": "quinta-feira, 15 de outubro de 2026, 1 tarefa pendente",
+        "unchangedDatabase": true,
+        "draftRetained": true
+      }
+    ],
+    "fixtureCorrection": "The initial tab-conceal test applied the month-navigation no-resize assertion to the separate Agenda→Tarefas transition. That transition legitimately causes two frame resizes when closing and returning to the taller calendar. The corrected follow-up restricts no-resize assertions to month changes; no product change was needed."
+  },
+  "limits": [
+    "Chromium production rendering and real iframe viewport with simulated native IPC do not verify physical Windows DWM/WebView2 compositing, FPS or cross-application native hit testing.",
+    "Live metadata scenarios use development-store fixtures, not a live Windows media session.",
+    "Final change after calendar matrix was limited to preview mascot sizing and caption spacing; calendar code and native integration were unchanged."
+  ],
+  "unchanged": [
+    "Native commands and windows",
+    "Stores and SQL/schema/data rules",
+    "User skills and templates",
+    "README and EXE distribution"
+  ]
+}

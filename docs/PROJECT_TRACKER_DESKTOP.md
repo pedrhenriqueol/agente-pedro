@@ -24,6 +24,7 @@
 | F13 | Controles nos cantos superiores | Alta | WebViews próprias/controller | Implementado; QA Windows pendente | Frames pequenos, popups medidos, desligamento nativo e hide conjunto |
 | F14 | Ilha e menus imersivos com mascote contínuo | Alta | Motion/WAAPI, geometria e retenção existentes | Implementado; QA Windows pendente | Mola interrompível, frame reduzido após conclusão, marcador e direção, reações finitas e movimento reduzido |
 | F15 | Primeiro paint dos widgets e polimento para release | Alta | HWND/viewport, paleta e feedback existentes | Implementado; QA Windows pendente | Barreira cancelável, client antigo descartado no resize, busca por teclado e confirmação finita após persistência |
+| F16 | Prévia interativa e passagem entre meses | Média | Apresentação, preferências e agenda existentes | Implementado; QA Windows pendente | Demonstração local reversível e calendário direcional com seis semanas fixas; foco e dados preservados |
 
 ## 3. Riscos e bloqueios
 
@@ -66,3 +67,10 @@ da animação. A entrega coordena o viewport com a preparação nativa, evita
 abandonar frames ocultos e completa pequenas interações. Validação: 109 testes,
 build, cargo check Windows e casos de primeiro paint no Chromium; efeito do
 compositor físico precisa ser revalidado antes da publicação do executável.
+
+A continuação está em
+[DESIGN_REPORT_INTERACTIVE_PREVIEW_CALENDAR.md](DESIGN_REPORT_INTERACTIVE_PREVIEW_CALENDAR.md):
+prévia com teste de abertura e passagem direcional dos meses sem alterar a
+altura da ilha. Validação: 109 testes, build, cargo check Windows, oito grupos
+de QA da prévia em produção, oito de metadados e 16 cenários de calendário
+com 1531 amostras. Nenhuma alteração no backend, nos stores ou no banco.
