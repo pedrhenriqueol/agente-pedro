@@ -16,6 +16,7 @@ import { IslandAppearance } from './IslandAppearance';
 import { completeIslandVisibilityTransition } from '../services/islandVisibility';
 import { islandGeometry, ISLAND_HEADER_HEIGHT, ISLAND_MAX_HEIGHT } from '../lib/islandGeometry';
 import { MARKER_TRAVEL, MOTION_INSTANT, SURFACE_CHANGE, SURFACE_CLOSE, SURFACE_OPEN } from '../lib/motionProfiles';
+import { waitForWidgetViewport } from '../lib/widgetViewport';
 import '../styles/desktop.css';
 import '../styles/island-surface.css';
 
@@ -108,6 +109,7 @@ export function DynamicIsland() {
   const expandedGeometry = surfaceHeight > geometry.compactHeight || surfaceWidth > geometry.compactWidth;
   const exiting = visibility.transition?.visible === false;
   const available = visibility.visible && !exiting;
+  const availableRef = useRef(available); availableRef.current = available;
   const requested = phase !== 'compact' && phase !== 'collapsing';
   const toolbarVisible = requested && (phase !== 'preparing' || expandedGeometry);
   const failure = error || visibilityError || visibility.error;
@@ -167,12 +169,14 @@ export function DynamicIsland() {
   const resizeSurface = useCallback((next: number, nextWidth = width.current) => { height.current = next; width.current = nextWidth; setSurfaceHeight(next); setSurfaceWidth(nextWidth); }, []);
   const resizeNative = useCallback(async (expanded: boolean, next = geometryRef.current.compactHeight, nextWidth = expanded ? geometryRef.current.expandedWidth : geometryRef.current.compactWidth) => {
     const sequence = ++resizeSequence.current;
-    await syncIslandSize(expanded, next + FRAME_PADDING, nextWidth + FRAME_PADDING);
+    const confirmed = await syncIslandSize(expanded, next + FRAME_PADDING, nextWidth + FRAME_PADDING);
     // A delayed reply must not replace the bounds of a newer successful resize.
     if (sequence > confirmedResizeSequence.current) {
       confirmedResizeSequence.current = sequence;
-      nativeHeight.current = next; nativeWidth.current = nextWidth;
+      nativeHeight.current = Math.max(0, confirmed.height - FRAME_PADDING);
+      nativeWidth.current = Math.max(0, confirmed.width - FRAME_PADDING);
     }
+    return confirmed;
   }, []);
   const preserveNativeFrame = useCallback(() => {
     cancelWork();
@@ -297,7 +301,11 @@ export function DynamicIsland() {
     const grows = g.compactWidth > width.current || g.compactHeight > height.current;
     void (async () => {
       try {
-        if (grows) await resizeNative(false, Math.max(g.compactHeight, height.current), Math.max(g.compactWidth, width.current));
+        if (grows) {
+          const prepared = await resizeNative(false, Math.max(g.compactHeight, height.current), Math.max(g.compactWidth, width.current));
+          if (isTauri() && !await waitForWidgetViewport(prepared,
+            () => sequence === epoch.current && !requestedExpansion.current && availableRef.current)) return;
+        }
         if (sequence !== epoch.current || requestedExpansion.current) return;
         resizeSurface(g.compactHeight, g.compactWidth);
         if (changing && !grows) afterSurfaceSettles(() => {
@@ -435,18 +443,14 @@ export function DynamicIsland() {
     restoreCompactFocus.current = restore && visibility.visible;
     resizeSurface(geometryRef.current.compactHeight, geometryRef.current.compactWidth);
     afterSurfaceSettles(() => {
-      void resizeNative(false).then(() => {
+      void resizeNative(false).then(async prepared => {
+        if (isTauri() && !await waitForWidgetViewport(prepared,
+          () => sequence === epoch.current && !requestedExpansion.current && availableRef.current)) return;
         if (sequence === epoch.current) setPhase('compact');
       }).catch(() => {
         if (sequence !== epoch.current || !visibility.visible) return;
         // Keep the still-large native frame occupied by a usable, retryable UI.
-        requestedExpansion.current = true;
-        resizingBlocked.current = true;
-        if (body.current) { body.current.style.transition = ''; body.current.style.opacity = ''; body.current.style.transform = ''; }
-        resizeSurface(nativeHeight.current, nativeWidth.current);
-        setBodyVisible(true);
-        setPhase('expanded');
-        setError('Não foi possível recolher a ilha. Tente novamente.');
+        preserveNativeFrame();
       });
     }, sequence);
   }
@@ -476,7 +480,7 @@ export function DynamicIsland() {
         // The body is already measurable but inert; enlarge the OS frame first.
         // Always pass through the FIFO barrier: an older shrink may already be
         // in flight even if the last confirmed frame still appears large enough.
-        await resizeNative(true, Math.max(nextHeight, nativeHeight.current), Math.max(geometryRef.current.expandedWidth, nativeWidth.current));
+        let prepared = await resizeNative(true, Math.max(nextHeight, nativeHeight.current), Math.max(geometryRef.current.expandedWidth, nativeWidth.current));
         preparedHeight = nativeHeight.current;
         if (sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) {
           return;
@@ -485,12 +489,15 @@ export function DynamicIsland() {
         // geometry rather than clipping the new content into the first sample.
         const currentHeight = measure();
         if (currentHeight > nativeHeight.current || geometryRef.current.expandedWidth > nativeWidth.current) {
-          await resizeNative(true, Math.max(currentHeight, nativeHeight.current), Math.max(geometryRef.current.expandedWidth, nativeWidth.current));
+          prepared = await resizeNative(true, Math.max(currentHeight, nativeHeight.current), Math.max(geometryRef.current.expandedWidth, nativeWidth.current));
           preparedHeight = nativeHeight.current;
         }
         if (sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current) {
           return;
         }
+        if (isTauri() && !await waitForWidgetViewport(prepared,
+          () => sequence === epoch.current && layout === layoutRevision.current && requestedExpansion.current && availableRef.current)) return;
+        if (sequence !== epoch.current || layout !== layoutRevision.current || !requestedExpansion.current || !availableRef.current) return;
         nextHeight = currentHeight;
         resizeSurface(nextHeight, geometryRef.current.expandedWidth);
         setPhase(transition.kind === 'open' ? 'expanding' : 'switching');

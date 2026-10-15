@@ -5,6 +5,7 @@ import { useFocusStore } from '../stores/useFocusStore';
 import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
 import { localDate } from '../database/date';
 import { FocusCard } from './RoutineModule';
+import { ActionConfirmation } from './ui/ActionConfirmation';
 import type { Page } from '../lib/desktop';
 
 export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
@@ -13,6 +14,7 @@ export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
     toggleTask: state.toggleTask, completeHabit: state.completeHabit, selectTask: state.selectTask })));
   const finance = useFinanceStore();
   const [feedback, setFeedback] = useState('');
+  const [feedbackEvent, setFeedbackEvent] = useState(0);
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
@@ -25,7 +27,7 @@ export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
   const minutesToday = sessionsToday.reduce((sum, s) => sum + s.duration_minutes, 0);
   const run = async (action: () => Promise<void>, message: string) => {
     setFeedback('');
-    try { await action(); setFeedback(message); } catch { /* The store keeps the specific failure message. */ }
+    try { await action(); setFeedback(message); setFeedbackEvent(current => current + 1); } catch { /* The store keeps the specific failure message. */ }
   };
   return <div className="home-page">
     <section className="home-welcome">
@@ -41,7 +43,7 @@ export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
       </div>
     </section>
     {(focus.error || finance.error) && <div role="alert" className="notice error">{focus.error || finance.error}</div>}
-    {feedback && <p role="status" className="notice success">{feedback}</p>}
+    {feedback && <p role="status" className="notice success"><ActionConfirmation eventId={feedbackEvent} />{feedback}</p>}
     <div className="home-grid">
       <div className="home-column">
       <section className="panel priorities-panel">

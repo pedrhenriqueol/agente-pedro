@@ -1,0 +1,5 @@
+.command-palette .command-item[data-active='true'] { background: var(--raised); color: var(--text); box-shadow: inset 2px 0 var(--accent); }
+.command-palette .command-item[data-active='true'] > svg:last-child { color: var(--accent); }
+.command-palette .command-help { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 18px; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.command-palette .command-help > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.command-palette .command-help kbd { min-width: 19px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); font: inherit; text-align: center; }

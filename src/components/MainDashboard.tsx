@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { emit } from '@tauri-apps/api/event';
 import { House, Focus, Wallet, Music2, SlidersHorizontal, ArrowRight, Command, HardDrive, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { CustomTitleBar } from './CustomTitleBar';
@@ -14,6 +14,7 @@ import { SelectionIndicator } from './ui/SelectionIndicator';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import type { Page } from '../lib/desktop';
 import '../styles/navigation.css';
+import '../styles/command-palette.css';
 
 const PAGES = [
   { id: 'home', name: 'Hoje', detail: 'Prioridades e visão do dia', Icon: House },
@@ -29,11 +30,16 @@ export function MainDashboard() {
   const [page, setPage] = useState<Page>(isPage(initial) ? initial : 'home');
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeCommand, setActiveCommand] = useState(0);
   const sidebarCollapsed = usePreferencesStore(state => state.sidebarCollapsed);
   const reduceMotion = usePreferencesStore(state => state.reduceMotion);
   const updatePreferences = usePreferencesStore(state => state.updatePreferences);
   const main = useRef<HTMLElement>(null);
   const nav = useRef<HTMLElement>(null);
+  const commandInput = useRef<HTMLInputElement>(null);
+  const openSearch = useCallback(() => {
+    setQuery(''); setActiveCommand(0); setSearchOpen(true);
+  }, []);
   const navigate = useCallback((next: Page) => {
     // Native requests also dismiss the palette, including requests for the same
     // area, before a retained page can restore its own modal and focus trap.
@@ -52,19 +58,40 @@ export function MainDashboard() {
   }, []);
   useEffect(() => { document.title = `${PAGES.find(area => area.id === page)!.name} · Agente Pedro`; }, [page]);
   useEffect(() => {
+    // The generic dialog initially focuses its close control. Search is an
+    // explicit local interaction: give its field focus after that lock is set.
+    if (searchOpen && document.hasFocus()) commandInput.current?.focus({ preventScroll: true });
+  }, [searchOpen]);
+  useEffect(() => {
     const receive = (event: Event) => { const target = (event as CustomEvent).detail; if (isPage(target)) navigate(target); };
     const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.altKey || event.shiftKey) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-        event.preventDefault(); setQuery(''); setSearchOpen(true);
+        event.preventDefault(); openSearch();
       }
     };
     window.addEventListener('pedro:navigate', receive); window.addEventListener('keydown', key);
     return () => { window.removeEventListener('pedro:navigate', receive); window.removeEventListener('keydown', key); };
-  }, [navigate]);
+  }, [navigate, openSearch]);
   const commands = PAGES.filter(p => (p.name + ' ' + p.detail).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
+  const selectedCommand = Math.min(activeCommand, Math.max(0, commands.length - 1));
+  function commandKeys(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (!searchOpen || event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
+      || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !commands.length) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (!event.repeat) navigate(commands[selectedCommand].id);
+      return;
+    }
+    const next = event.key === 'ArrowDown' ? (selectedCommand + 1) % commands.length
+      : event.key === 'ArrowUp' ? (selectedCommand - 1 + commands.length) % commands.length
+        : event.key === 'Home' ? 0 : event.key === 'End' ? commands.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault(); setActiveCommand(next);
+  }
   return <div className={`app-shell${sidebarCollapsed ? ' has-collapsed-sidebar' : ''}`}>
-    <CustomTitleBar onSearch={() => { setQuery(''); setSearchOpen(true); }} />
+    <CustomTitleBar onSearch={openSearch} />
     <div className="app-layout">
       <aside className="sidebar" aria-label="Navegação do Pedro">
         <div className="sidebar-brand"><PedroMascot className="brand-mark" /><div className="sidebar-brand-copy"><strong>Pedro</strong><span>Seu espaço pessoal</span></div></div>
@@ -83,7 +110,7 @@ export function MainDashboard() {
             {sidebarCollapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}<span>Recolher navegação</span>
           </button>
           <button type="button" className="sidebar-search" aria-label="Buscar uma ação" title={sidebarCollapsed ? 'Buscar uma ação · Ctrl K' : undefined}
-            onClick={() => { setQuery(''); setSearchOpen(true); }}><Command size={16} aria-hidden="true" /><span>Buscar uma ação</span><kbd>Ctrl K</kbd></button>
+            onClick={openSearch}><Command size={16} aria-hidden="true" /><span>Buscar uma ação</span><kbd>Ctrl K</kbd></button>
         </div>
       </aside>
       <main ref={main} className="app-main" id="main-content">
@@ -93,10 +120,19 @@ export function MainDashboard() {
         </PageTransition>
       </main>
     </div>
-    <Dialog open={searchOpen} title="Por onde vamos começar?" description="Encontre uma área para cuidar da sua rotina." onClose={() => setSearchOpen(false)}>
-      <label htmlFor="command-search" className="sr-only">Buscar área ou ação</label><input id="command-search" className="field" placeholder="Tarefas, foco, finanças, aparência…" value={query} onChange={e => setQuery(e.target.value)} />
-      <div className="command-list">{commands.map(({ id, name, detail, Icon }) => <button key={id} type="button" className="command-item" onClick={() => { setSearchOpen(false); navigate(id); }}><Icon size={21} /><span><strong>{name}</strong><small>{detail}</small></span><ArrowRight size={17} /></button>)}
+    <Dialog open={searchOpen} className="command-palette" title="Por onde vamos começar?" description="Encontre uma área para cuidar da sua rotina." onClose={() => setSearchOpen(false)}>
+      <label htmlFor="command-search" className="sr-only">Buscar área ou ação</label><input ref={commandInput} id="command-search" className="field" placeholder="Tarefas, foco, finanças, aparência…" value={query}
+        aria-controls="command-results" aria-describedby="command-help command-selection" autoComplete="off"
+        onChange={event => { setQuery(event.target.value); setActiveCommand(0); }} onKeyDown={commandKeys} />
+      <div id="command-results" className="command-list" role="group" aria-label="Áreas encontradas">{commands.map(({ id, name, detail, Icon }, index) => <button key={id} type="button" className="command-item"
+        data-active={index === selectedCommand || undefined}
+        onPointerEnter={() => { if (document.activeElement === commandInput.current) setActiveCommand(index); }}
+        onFocus={() => setActiveCommand(index)} onClick={() => navigate(id)}>
+        <Icon size={21} aria-hidden="true" /><span><strong>{name}</strong><small>{detail}</small></span><ArrowRight size={17} aria-hidden="true" /></button>)}
         {!commands.length && <p className="empty-state">Nenhuma área encontrada. Tente “foco” ou “finanças”.</p>}</div>
+      <p id="command-help" className="command-help"><span><kbd>↑</kbd><kbd>↓</kbd> escolher</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> fechar</span></p>
+      <p id="command-selection" className="sr-only" role="status" aria-live="polite" aria-atomic="true">{searchOpen && (commands.length
+        ? `${commands[selectedCommand].name}, resultado ${selectedCommand + 1} de ${commands.length}. Enter para abrir.` : 'Nenhuma área encontrada.')}</p>
     </Dialog>
   </div>;
 }

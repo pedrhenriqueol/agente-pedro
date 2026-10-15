@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { animate, motion, useMotionValue } from 'motion/react';
+import { isTauri } from '@tauri-apps/api/core';
 import { ChevronDown, ChevronUp, CircleAlert, LayoutGrid, ListTodo, Palette, RefreshCw, Volume2, VolumeX, X } from 'lucide-react';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
@@ -8,6 +9,7 @@ import { useMediaStore } from '../stores/useMediaStore';
 import { configureTopControl, type TopControlFrame, type TopControlLabel } from '../services/topControls';
 import { requestPage, type DesktopPage } from '../lib/desktop';
 import { POPOVER_ENTER, POPOVER_EXIT } from '../lib/motionProfiles';
+import { waitForWidgetViewport } from '../lib/widgetViewport';
 import { IslandAppearance } from './IslandAppearance';
 import { MusicVolume } from './MusicPlayer';
 import '../styles/desktop.css';
@@ -173,7 +175,12 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
       }
       if (current !== epoch.current || !intent.current || !allowed.current) return;
       node.style.height = `${Math.max(1, next.height - 52)}px`;
-      setFrame(next); setNativeVisible(next.visible); setPopupVisible(next.visible); setError(null);
+      prepared = next;
+      setFrame(next); setNativeVisible(next.visible);
+      if (next.visible && isTauri() && !await waitForWidgetViewport(next,
+        () => current === epoch.current && intent.current && allowed.current)) return;
+      if (current !== epoch.current || !intent.current || !allowed.current) return;
+      setPopupVisible(next.visible); setError(null);
       if (!next.visible) { intent.current = false; setPopupMounted(false); }
     }).catch(async failure => {
       if (current !== epoch.current) return;

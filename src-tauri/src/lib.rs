@@ -56,7 +56,7 @@ pub fn centralizar_ilha_topo(app: &AppHandle) {
 
 /// Prepare the complete native frame before React starts its size animation.
 /// Position and dimensions use the current monitor's work area, including DPI.
-pub(crate) fn resize_island_frame(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
+pub(crate) fn resize_island_frame(app: &AppHandle, width: f64, height: f64) -> Result<widget_frame::WidgetViewport, String> {
     if !width.is_finite() || !height.is_finite() {
         return Err("Dimensões inválidas para a ilha.".into());
     }
@@ -71,10 +71,15 @@ pub(crate) fn resize_island_frame(app: &AppHandle, width: f64, height: f64) -> R
     let height = height.clamp(ISLAND_COMPACT_HEIGHT, ISLAND_EXPANDED_HEIGHT)
         .min((f64::from(area.size.height) / scale - 2.0).max(1.0));
     let physical_width = (width * scale).round() as i32;
+    let physical_height = (height * scale).round() as u32;
     let x = area.position.x + (area.size.width as i32 - physical_width) / 2;
     let y = area.position.y + (2.0 * scale).round() as i32;
     widget_frame::set_frame(&island, PhysicalPosition::new(x, y),
-        PhysicalSize::new(physical_width as u32, (height * scale).round() as u32))
+        PhysicalSize::new(physical_width as u32, physical_height))?;
+    Ok(widget_frame::WidgetViewport {
+        width: f64::from(physical_width) / scale,
+        height: f64::from(physical_height) / scale,
+    })
 }
 
 pub fn centralizar_dock_base(app: &AppHandle) {
@@ -141,7 +146,7 @@ fn island_available_width(app: AppHandle) -> Result<f64, String> {
 }
 
 #[tauri::command]
-fn expandir_ilha(app: AppHandle, altura: f64, largura: Option<f64>) -> Result<(), String> {
+fn expandir_ilha(app: AppHandle, altura: f64, largura: Option<f64>) -> Result<widget_frame::WidgetViewport, String> {
     let state = app.try_state::<island_visibility::IslandVisibilityState>()
         .ok_or_else(|| "A visibilidade da ilha ainda está iniciando.".to_string())?;
     if !island_visibility::is_visible(state.inner()) {
@@ -151,7 +156,7 @@ fn expandir_ilha(app: AppHandle, altura: f64, largura: Option<f64>) -> Result<()
 }
 
 #[tauri::command]
-fn recolher_ilha(app: AppHandle, altura: Option<f64>, largura: Option<f64>) -> Result<(), String> {
+fn recolher_ilha(app: AppHandle, altura: Option<f64>, largura: Option<f64>) -> Result<widget_frame::WidgetViewport, String> {
     let width = largura.unwrap_or(ISLAND_WIDTH);
     let height = altura.unwrap_or(ISLAND_COMPACT_HEIGHT);
     let state = app.try_state::<island_visibility::IslandVisibilityState>()

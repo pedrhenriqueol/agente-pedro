@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import type { WidgetViewport } from './widgetViewport';
 
 export type DesktopPage = 'home' | 'routine' | 'finance' | 'music' | 'appearance';
 export type Page = DesktopPage;
@@ -31,20 +32,26 @@ export async function requestPage(page: DesktopPage): Promise<void> {
 }
 
 /** Native sizes include the transparent padding that contains the widget shadow. */
-let islandSizeQueue = Promise.resolve();
-export async function syncIslandSize(expanded: boolean, frameHeight = expanded ? 284 : 48, frameWidth = expanded ? 584 : 120): Promise<void> {
-  if (!isTauri()) return;
+let islandSizeQueue: Promise<unknown> = Promise.resolve();
+export async function syncIslandSize(expanded: boolean, frameHeight = expanded ? 284 : 48, frameWidth = expanded ? 584 : 120): Promise<WidgetViewport> {
   const dimensions = {
     altura: Math.max(48, Math.min(424, frameHeight)),
     largura: Math.max(96, Math.min(664, frameWidth)),
   };
+  if (!isTauri()) return { width: dimensions.largura, height: dimensions.altura };
   // Keep prepare/grow/shrink commands ordered even when an interrupted React
   // animation issues a new request before the previous IPC reply arrives.
   const request = islandSizeQueue.catch(() => {}).then(async () => {
-    await invoke(expanded ? 'expandir_ilha' : 'recolher_ilha', dimensions);
+    const result = await invoke<WidgetViewport | undefined>(expanded ? 'expandir_ilha' : 'recolher_ilha', dimensions);
+    // Older development backends and isolated IPC fixtures returned no payload.
+    const frame = result ?? { width: dimensions.largura, height: dimensions.altura };
+    if (![frame.width, frame.height].every(value => Number.isFinite(value) && value > 0)) {
+      throw new Error('A janela retornou dimensões inválidas.');
+    }
+    return frame;
   });
   islandSizeQueue = request;
-  await request;
+  return request;
 }
 
 interface DockVisibilityBatch {

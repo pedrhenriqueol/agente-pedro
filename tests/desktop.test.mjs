@@ -108,6 +108,24 @@ test('an interrupted island grow waits for native confirmation before shrinking 
   await compact;
 });
 
+test('island resize returns the monitor-clamped and DPI-rounded viewport confirmed by native', async () => {
+  const env = environment();
+  const pending = env.syncIslandSize(true, 424, 664);
+  await settle();
+  env.requests[0].resolve({ width: 383.2, height: 237.6 });
+  assert.deepEqual(JSON.parse(JSON.stringify(await pending)), { width: 383.2, height: 237.6 });
+});
+
+test('an invalid native viewport rejects without poisoning the next queued island resize', async () => {
+  const env = environment();
+  const failure = assert.rejects(env.syncIslandSize(true), /dimensões inválidas/);
+  const retry = env.syncIslandSize(false);
+  await settle(); env.requests[0].resolve({ width: 0, height: 48 });
+  await failure; await settle();
+  env.requests[1].resolve({ width: 120, height: 48 });
+  assert.deepEqual(JSON.parse(JSON.stringify(await retry)), { width: 120, height: 48 });
+});
+
 test('an island with a compact viewport reads desktop space from its native monitor', async () => {
   const env = environment();
   const width = env.readIslandAvailableWidth();

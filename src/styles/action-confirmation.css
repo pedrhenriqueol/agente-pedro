@@ -1,0 +1,9 @@
+.action-confirmation {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin-inline-end: 6px;
+  vertical-align: -2px;
+  transform-origin: center;
+  pointer-events: none;
+}
+.island-today-notice .action-confirmation { margin-inline-end: 0; }

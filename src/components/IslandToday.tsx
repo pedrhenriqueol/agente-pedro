@@ -7,6 +7,7 @@ import { useFocusStore } from '../stores/useFocusStore';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { RetainedTransition } from './ui/PageTransition';
 import { SelectionIndicator } from './ui/SelectionIndicator';
+import { ActionConfirmation } from './ui/ActionConfirmation';
 import { IslandCalendar } from './IslandCalendar';
 import { calendarDate } from '../lib/islandCalendar';
 import '../styles/island-today.css';
@@ -35,6 +36,8 @@ export function IslandToday({ onOpenPanel }: { onOpenPanel: () => void }) {
   const [agendaDraft, setAgendaDraft] = useState('');
   const [agendaFormVisible, setAgendaFormVisible] = useState(false);
   const [notice, setNotice] = useState('');
+  const [noticeEvent, setNoticeEvent] = useState(0);
+  const confirmationCount = useRef(0);
   const [busyItems, setBusyItems] = useState<Set<string>>(() => new Set());
   const busy = useRef(new Set<string>());
   const root = useRef<HTMLDivElement>(null);
@@ -89,7 +92,10 @@ export function IslandToday({ onOpenPanel }: { onOpenPanel: () => void }) {
     setBusyItems(new Set(busy.current));
     setNotice('');
     clearError();
-    try { await action(); success(); succeeded = true; }
+    try {
+      await action(); success(); succeeded = true;
+      setNoticeEvent(key === 'refresh' ? 0 : ++confirmationCount.current);
+    }
     catch { /* The store retains the precise persistence error and the input draft. */ }
     finally {
       busy.current.delete(key); setBusyItems(new Set(busy.current));
@@ -240,6 +246,6 @@ export function IslandToday({ onOpenPanel }: { onOpenPanel: () => void }) {
         {habits.length > VISIBLE_ITEMS && <p className="island-today-more">Mais {habits.length - VISIBLE_ITEMS} {habits.length - VISIBLE_ITEMS === 1 ? 'hábito no painel' : 'hábitos no painel'}.</p>}
       </>}
     </RetainedTransition>
-    {notice && <p className="island-today-notice" role="status">{notice}</p>}
+    {notice && <p className="island-today-notice" role="status"><ActionConfirmation eventId={noticeEvent} />{notice}</p>}
   </div>;
 }

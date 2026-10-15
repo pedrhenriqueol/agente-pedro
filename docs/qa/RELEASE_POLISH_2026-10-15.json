@@ -1,0 +1,749 @@
+{
+  "date": "2026-10-15",
+  "base_commit": "194df4c",
+  "scope": "Chromium com viewport real de iframe e IPC nativo simulado; dados isolados de demonstração.",
+  "limitations": [
+    "Não executa o binário Windows nem comprova pixels do DWM/WebView2.",
+    "SWP_NOCOPYBITS, foco entre aplicativos, DPI e clique através do desktop precisam de validação física."
+  ],
+  "checks": {
+    "node": {
+      "passed": 109,
+      "failed": 0,
+      "skipped": 0
+    },
+    "typescript_vite": "passed",
+    "cargo_check_windows_gnu_tests": "passed"
+  },
+  "suites": {
+    "first_paint_development": {
+      "passed": 24,
+      "results": [
+        {
+          "name": "island: IPC precedes actual viewport 1RAF",
+          "label": "island",
+          "pass": true,
+          "samples": 42,
+          "preResizeSamples": 2,
+          "ipcFrame": 8,
+          "viewportFrame": 10,
+          "firstGrowthFrame": 12
+        },
+        {
+          "name": "island: IPC precedes actual viewport 2RAF",
+          "label": "island",
+          "pass": true,
+          "samples": 72,
+          "preResizeSamples": 3,
+          "ipcFrame": 9,
+          "viewportFrame": 12,
+          "firstGrowthFrame": 14
+        },
+        {
+          "name": "island: IPC precedes actual viewport 3RAF",
+          "label": "island",
+          "pass": true,
+          "samples": 69,
+          "preResizeSamples": 4,
+          "ipcFrame": 9,
+          "viewportFrame": 13,
+          "firstGrowthFrame": 15
+        },
+        {
+          "name": "island: IPC precedes actual viewport 160ms",
+          "label": "island",
+          "pass": true,
+          "samples": 70,
+          "preResizeSamples": 12,
+          "ipcFrame": 9,
+          "viewportFrame": 21,
+          "firstGrowthFrame": 24
+        },
+        {
+          "name": "top-right: IPC precedes actual viewport 1RAF",
+          "label": "top-right",
+          "pass": true,
+          "samples": 24,
+          "preResizeSamples": 2,
+          "ipcFrame": 7,
+          "viewportFrame": 9,
+          "firstGrowthFrame": 11
+        },
+        {
+          "name": "top-right: IPC precedes actual viewport 2RAF",
+          "label": "top-right",
+          "pass": true,
+          "samples": 24,
+          "preResizeSamples": 3,
+          "ipcFrame": 7,
+          "viewportFrame": 10,
+          "firstGrowthFrame": 12
+        },
+        {
+          "name": "top-right: IPC precedes actual viewport 3RAF",
+          "label": "top-right",
+          "pass": true,
+          "samples": 27,
+          "preResizeSamples": 4,
+          "ipcFrame": 7,
+          "viewportFrame": 11,
+          "firstGrowthFrame": 13
+        },
+        {
+          "name": "top-right: IPC precedes actual viewport 160ms",
+          "label": "top-right",
+          "pass": true,
+          "samples": 39,
+          "preResizeSamples": 11,
+          "ipcFrame": 7,
+          "viewportFrame": 18,
+          "firstGrowthFrame": 21
+        },
+        {
+          "name": "top-left: IPC precedes actual viewport 1RAF",
+          "label": "top-left",
+          "pass": true,
+          "samples": 24,
+          "preResizeSamples": 1,
+          "ipcFrame": 7,
+          "viewportFrame": 9,
+          "firstGrowthFrame": 11
+        },
+        {
+          "name": "top-left: IPC precedes actual viewport 2RAF",
+          "label": "top-left",
+          "pass": true,
+          "samples": 27,
+          "preResizeSamples": 3,
+          "ipcFrame": 7,
+          "viewportFrame": 10,
+          "firstGrowthFrame": 12
+        },
+        {
+          "name": "top-left: IPC precedes actual viewport 3RAF",
+          "label": "top-left",
+          "pass": true,
+          "samples": 25,
+          "preResizeSamples": 3,
+          "ipcFrame": 7,
+          "viewportFrame": 11,
+          "firstGrowthFrame": 13
+        },
+        {
+          "name": "top-left: IPC precedes actual viewport 160ms",
+          "label": "top-left",
+          "pass": true,
+          "samples": 39,
+          "preResizeSamples": 11,
+          "ipcFrame": 7,
+          "viewportFrame": 18,
+          "firstGrowthFrame": 21
+        },
+        {
+          "name": "island: cancel delayed opening, retry and rapid close/reopen",
+          "label": "island",
+          "pass": true,
+          "samples": 118
+        },
+        {
+          "name": "top-right: cancel delayed opening, retry and rapid close/reopen",
+          "label": "top-right",
+          "pass": true,
+          "samples": 54
+        },
+        {
+          "name": "island: timeout remains recoverable then retries",
+          "label": "island",
+          "pass": true,
+          "retry": true
+        },
+        {
+          "name": "top-right: timeout remains recoverable then retries",
+          "label": "top-right",
+          "pass": true,
+          "retry": true
+        },
+        {
+          "name": "island: native failure recovery and retry",
+          "label": "island",
+          "pass": true,
+          "retry": true
+        },
+        {
+          "name": "top-right: native failure recovery and retry",
+          "label": "top-right",
+          "pass": true,
+          "retry": true
+        },
+        {
+          "name": "island: reduced motion interrupts a running spring",
+          "label": "island",
+          "pass": true,
+          "reducedSettled": true
+        },
+        {
+          "name": "top-right: reduced motion interrupts a running spring",
+          "label": "top-right",
+          "pass": true,
+          "reducedSettled": true
+        },
+        {
+          "name": "island: hide while pending prevents stale reveal",
+          "label": "island",
+          "pass": true,
+          "staleHidden": true,
+          "retry": true
+        },
+        {
+          "name": "top-right: hide while pending prevents stale reveal",
+          "label": "top-right",
+          "pass": true,
+          "staleHidden": true,
+          "retry": true
+        },
+        {
+          "name": "island: monitor clamp and reduced during preparation/growth",
+          "label": "island",
+          "pass": true,
+          "samples": 25,
+          "preResizeSamples": 9,
+          "ipcFrame": 9,
+          "viewportFrame": 18,
+          "firstGrowthFrame": 21
+        },
+        {
+          "name": "top-right: monitor clamp and reduced during preparation/growth",
+          "label": "top-right",
+          "pass": true,
+          "samples": 24,
+          "preResizeSamples": 11,
+          "ipcFrame": 6,
+          "viewportFrame": 17,
+          "firstGrowthFrame": 20
+        }
+      ],
+      "samples": 1235,
+      "limit": "Chromium DOM viewport/IPC simulation only. Screen anchors are measured after real iframe CSS viewport/position updates; old Windows DWM/WebView2 bitmaps and SWP_NOCOPYBITS require physical Windows validation."
+    },
+    "first_paint_production": {
+      "passed": 5,
+      "results": [
+        {
+          "name": "island: production first paint waits real viewport160ms",
+          "label": "island",
+          "pass": true,
+          "samples": 75,
+          "preResizeSamples": 11,
+          "ipcFrame": 10,
+          "viewportFrame": 21,
+          "firstGrowthFrame": 24
+        },
+        {
+          "name": "top-right: production first paint waits real viewport160ms",
+          "label": "top-right",
+          "pass": true,
+          "samples": 38,
+          "preResizeSamples": 11,
+          "ipcFrame": 6,
+          "viewportFrame": 17,
+          "firstGrowthFrame": 20
+        },
+        {
+          "name": "top-left: production first paint waits real viewport160ms",
+          "label": "top-left",
+          "pass": true,
+          "samples": 33,
+          "preResizeSamples": 11,
+          "ipcFrame": 8,
+          "viewportFrame": 19,
+          "firstGrowthFrame": 22
+        },
+        {
+          "name": "island: production reduced during active spring",
+          "label": "island",
+          "pass": true,
+          "reducedSettled": true
+        },
+        {
+          "name": "top-right: production reduced during active spring",
+          "label": "top-right",
+          "pass": true,
+          "reducedSettled": true
+        }
+      ],
+      "samples": 309,
+      "limit": "Production Vite bundle in Chromium, real iframe viewport, native IPC simulated. No proof of Windows DWM/WebView2 bitmap behavior; NOCOPYBITS and physical DPI require Windows."
+    },
+    "hidden_recovery_development": {
+      "passed": 9,
+      "results": [
+        {
+          "name": "island: hidden240ms resumes valid preparation",
+          "label": "island",
+          "pass": true,
+          "waiting": {
+            "native": {
+              "width": 584,
+              "height": 345
+            },
+            "phase": "preparing",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "resumed": {
+            "native": {
+              "width": 584,
+              "height": 345
+            },
+            "phase": "expanded",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": true,
+            "errors": []
+          }
+        },
+        {
+          "name": "island: hidden beyond1200ms recovers compact then retry",
+          "label": "island",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 120,
+              "height": 48
+            },
+            "phase": "compact",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "retried": {
+            "native": {
+              "width": 584,
+              "height": 345
+            },
+            "phase": "expanded",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": true,
+            "errors": []
+          }
+        },
+        {
+          "name": "island: obsolete hidden opening stays cancelled beyond timeout",
+          "label": "island",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 120,
+              "height": 48
+            },
+            "phase": "compact",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "cancelledSamples": 94,
+          "retry": true
+        },
+        {
+          "name": "top-right: hidden240ms resumes valid preparation",
+          "label": "top-right",
+          "pass": true,
+          "waiting": {
+            "native": {
+              "width": 304,
+              "height": 176
+            },
+            "phase": null,
+            "popup": "false",
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "resumed": {
+            "native": {
+              "width": 304,
+              "height": 176
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-right: hidden beyond1200ms recovers compact then retry",
+          "label": "top-right",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 90,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "retried": {
+            "native": {
+              "width": 304,
+              "height": 176
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-right: obsolete hidden opening stays cancelled beyond timeout",
+          "label": "top-right",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 90,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "cancelledSamples": 93,
+          "retry": true
+        },
+        {
+          "name": "top-left: hidden240ms resumes valid preparation",
+          "label": "top-left",
+          "pass": true,
+          "waiting": {
+            "native": {
+              "width": 384,
+              "height": 407
+            },
+            "phase": null,
+            "popup": "false",
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "resumed": {
+            "native": {
+              "width": 384,
+              "height": 407
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-left: hidden beyond1200ms recovers compact then retry",
+          "label": "top-left",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 128,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "retried": {
+            "native": {
+              "width": 384,
+              "height": 407
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-left: obsolete hidden opening stays cancelled beyond timeout",
+          "label": "top-left",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 128,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "cancelledSamples": 93,
+          "retry": true
+        }
+      ],
+      "samples": 365,
+      "limit": "Chromium real DOM/iframe with native IPC simulated and document.hidden getter controlled. Tests verify component recovery and no JavaScript errors; this is not a physical WebView2 compositor or paused-RAF test."
+    },
+    "hidden_recovery_production": {
+      "passed": 9,
+      "results": [
+        {
+          "name": "island: hidden240ms resumes valid preparation",
+          "label": "island",
+          "pass": true,
+          "waiting": {
+            "native": {
+              "width": 584,
+              "height": 345
+            },
+            "phase": "preparing",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "resumed": {
+            "native": {
+              "width": 584,
+              "height": 345
+            },
+            "phase": "expanded",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": true,
+            "errors": []
+          }
+        },
+        {
+          "name": "island: hidden beyond1200ms recovers compact then retry",
+          "label": "island",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 120,
+              "height": 48
+            },
+            "phase": "compact",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "retried": {
+            "native": {
+              "width": 584,
+              "height": 345
+            },
+            "phase": "expanded",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": true,
+            "errors": []
+          }
+        },
+        {
+          "name": "island: obsolete hidden opening stays cancelled beyond timeout",
+          "label": "island",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 120,
+              "height": 48
+            },
+            "phase": "compact",
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "cancelledSamples": 93,
+          "retry": true
+        },
+        {
+          "name": "top-right: hidden240ms resumes valid preparation",
+          "label": "top-right",
+          "pass": true,
+          "waiting": {
+            "native": {
+              "width": 304,
+              "height": 176
+            },
+            "phase": null,
+            "popup": "false",
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "resumed": {
+            "native": {
+              "width": 304,
+              "height": 176
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-right: hidden beyond1200ms recovers compact then retry",
+          "label": "top-right",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 90,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "retried": {
+            "native": {
+              "width": 304,
+              "height": 176
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-right: obsolete hidden opening stays cancelled beyond timeout",
+          "label": "top-right",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 90,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "cancelledSamples": 94,
+          "retry": true
+        },
+        {
+          "name": "top-left: hidden240ms resumes valid preparation",
+          "label": "top-left",
+          "pass": true,
+          "waiting": {
+            "native": {
+              "width": 384,
+              "height": 407
+            },
+            "phase": null,
+            "popup": "false",
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "resumed": {
+            "native": {
+              "width": 384,
+              "height": 407
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-left: hidden beyond1200ms recovers compact then retry",
+          "label": "top-left",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 128,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "retried": {
+            "native": {
+              "width": 384,
+              "height": 407
+            },
+            "phase": null,
+            "popup": "true",
+            "inert": false,
+            "bodyVisible": false,
+            "errors": []
+          }
+        },
+        {
+          "name": "top-left: obsolete hidden opening stays cancelled beyond timeout",
+          "label": "top-left",
+          "pass": true,
+          "recovered": {
+            "native": {
+              "width": 128,
+              "height": 46
+            },
+            "phase": null,
+            "popup": null,
+            "inert": true,
+            "bodyVisible": false,
+            "errors": []
+          },
+          "cancelledSamples": 94,
+          "retry": true
+        }
+      ],
+      "samples": 361,
+      "limit": "Production Vite bundle in Chromium real DOM/iframe with native IPC simulated and document.hidden getter controlled. Tests verify component recovery and no JavaScript errors; this is not a physical WebView2 compositor or paused-RAF test."
+    },
+    "command_palette": {
+      "passed": 6,
+      "results": [
+        "field focus, five-result arrows/Home/End/wrap, accessible status and Enter navigation without background lock",
+        "filter reset/clamp, no-results Enter ignored and first filtered result opens",
+        "IME/composition/229, modifier selection and prevented events do not navigate",
+        "pointer active result/click and full Tab/Shift+Tab button navigation retained",
+        "other-modal Ctrl+K guard, shortcut IME/modifiers, Escape and fresh-open selection/query reset",
+        "1280/760/390 widths, reduced/system default motion, released locks and zero JavaScript errors"
+      ],
+      "errors": []
+    },
+    "action_confirmation": {
+      "passed": 7,
+      "results": [
+        "Home: post-persistence check once, finite 150 ms, decorative, no replay on navigation",
+        "Home: system/app reduced motion static success and no deferred animation",
+        "Home: failed persistence produces existing error and zero success feedback",
+        "Island: genuine saved task/habit only, same focus behavior, double activation saves and confirms once",
+        "Island: hiding cancels immediately; revealing never replays",
+        "Island: failed save retains draft; successful refresh does not animate",
+        "Island: app reduced motion suppresses current/future replay"
+      ],
+      "errors": []
+    }
+  }
+}

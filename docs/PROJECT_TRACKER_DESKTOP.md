@@ -23,6 +23,7 @@
 | F12 | Agenda local e aparência contextual | Alta | Stores/preferências | Implementado; QA Windows pendente | Calendário por data real, cores, tamanho, opacidade e teclado |
 | F13 | Controles nos cantos superiores | Alta | WebViews próprias/controller | Implementado; QA Windows pendente | Frames pequenos, popups medidos, desligamento nativo e hide conjunto |
 | F14 | Ilha e menus imersivos com mascote contínuo | Alta | Motion/WAAPI, geometria e retenção existentes | Implementado; QA Windows pendente | Mola interrompível, frame reduzido após conclusão, marcador e direção, reações finitas e movimento reduzido |
+| F15 | Primeiro paint dos widgets e polimento para release | Alta | HWND/viewport, paleta e feedback existentes | Implementado; QA Windows pendente | Barreira cancelável, client antigo descartado no resize, busca por teclado e confirmação finita após persistência |
 
 ## 3. Riscos e bloqueios
 
@@ -56,3 +57,12 @@ Niko está em [NIKO_MOTION_REVIEW.md](NIKO_MOTION_REVIEW.md); nenhum código ou 
 proprietário foi reutilizado. Motion MIT, 96 testes aprovados, build e cargo check
 Windows. Hover validado em 569 amostras sem recortes; estados, teclado, falhas,
 reversões e menus dos cantos verificados no Chromium. [Prévia para baixar](previews/README.md).
+
+O ajuste de 2026-10-15 está em
+[DESIGN_REPORT_RELEASE_POLISH.md](DESIGN_REPORT_RELEASE_POLISH.md) e
+[SYSTEM_DESIGN_RELEASE_MOTION.md](SYSTEM_DESIGN_RELEASE_MOTION.md). O vídeo
+mostrou um quadro vazio na central e deslocamento de 214 px na direita antes
+da animação. A entrega coordena o viewport com a preparação nativa, evita
+abandonar frames ocultos e completa pequenas interações. Validação: 109 testes,
+build, cargo check Windows e casos de primeiro paint no Chromium; efeito do
+compositor físico precisa ser revalidado antes da publicação do executável.
