@@ -10,6 +10,7 @@ mod dock_visibility;
 mod top_controls;
 mod widget_frame;
 mod widget_region;
+mod widget_chrome;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

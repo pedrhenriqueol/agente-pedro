@@ -25,7 +25,8 @@
 | F14 | Ilha e menus imersivos com mascote contínuo | Alta | Motion/WAAPI, geometria e retenção existentes | Implementado; QA Windows pendente | Mola interrompível, frame reduzido após conclusão, marcador e direção, reações finitas e movimento reduzido |
 | F15 | Primeiro paint dos widgets e polimento para release | Alta | HWND/viewport, paleta e feedback existentes | Implementado; QA Windows pendente | Barreira cancelável, client antigo descartado no resize, busca por teclado e confirmação finita após persistência |
 | F16 | Prévia interativa e passagem entre meses | Média | Apresentação, preferências e agenda existentes | Implementado; QA Windows pendente | Demonstração local reversível e calendário direcional com seis semanas fixas; foco e dados preservados |
-| F17 | Viewport estável para a piscada persistente | Alta | Região Win32, DPI e contrato de preparação | Implementado; revalidação Windows pendente | Reserva fixa, recorte nativo, escala e gerações; zero mudança de host na reprodução em browser |
+| F17 | Viewport estável para a piscada persistente | Alta | Região Win32, DPI e contrato de preparação | Fim da piscada confirmado pelo usuário | Reserva fixa e recorte nativo; legenda exposta tratada em F18 |
+| F18 | Remoção da legenda nativa dos widgets | Alta | Estilos Win32/subclass e recorte existentes | Implementado; revalidação Windows pendente | Política persistente só nos três widgets; foco, transparência, cursor e viewport preservados |
 
 ## 3. Riscos e bloqueios
 
@@ -84,3 +85,11 @@ Validação: 117 testes Node, 12 políticas Rust executadas, build, cargo check
 Windows, 13 cenários de reserva fixa e cinco de compatibilidade. A reprodução
 anterior separou movimento do host e atualização da WebView; a apresentação
 física do novo executável ainda precisa ser conferida no Windows.
+
+O usuário confirmou que a piscada sumiu, mas reportou a legenda nativa com
+ícone/título atrás dos widgets. A correção está em
+[DESIGN_REPORT_WIDGET_CAPTION.md](DESIGN_REPORT_WIDGET_CAPTION.md) e
+[SYSTEM_DESIGN_WIDGET_CAPTION.md](SYSTEM_DESIGN_WIDGET_CAPTION.md).
+Validação: 117 testes Node, três políticas Rust executadas, build e cargo
+check Windows aprovados; três testes de HWND oculto compilados, sem execução
+neste Linux. Regravações do Tao não podem reintroduzir caption/bordas.

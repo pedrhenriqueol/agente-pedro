@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-15",
+  "baseCommit": "7bbbe85de6033e982905b0ab202dd6ea99ca8a91",
+  "userEvidence": {
+    "animation": "User confirmed previous flash fixed",
+    "regression": "Classic native caption with icon and configured title visible behind right control; reported on all three widgets"
+  },
+  "diagnosis": {
+    "library": "Tao 0.37.1",
+    "nativeStyles": "WS_CAPTION retained for undecorated top-level HWND; borderless layout relies on WM_NCCALCSIZE",
+    "trigger": "SetWindowRgn redraw exposes retained native non-client painting",
+    "persistence": "WindowFlags::apply_diff rewrites styles, requiring WM_STYLECHANGING filtering"
+  },
+  "scope": [
+    "island",
+    "top-left",
+    "top-right"
+  ],
+  "preserved": [
+    "Stable reserved viewport and native input region",
+    "Motion timing and geometry",
+    "Main window and dock",
+    "Visibility/click-through/focus/composition flags",
+    "Stores and SQLite",
+    "User skills and templates"
+  ],
+  "limits": [
+    "Linux does not execute HWND, DWM/WebView2 or native caption painting.",
+    "Windows-only integration tests must be distinguished from portable tests actually executed."
+  ],
+  "checks": {
+    "node": {
+      "pass": 117,
+      "fail": 0,
+      "skipped": 0
+    },
+    "portableRustChromePolicy": {
+      "pass": 3,
+      "fail": 0,
+      "skipped": 0
+    },
+    "build": {
+      "result": "pass",
+      "existingWarning": "Mixed static/dynamic @tauri-apps/api/event.js import"
+    },
+    "windowsCrossCheck": {
+      "target": "x86_64-pc-windows-gnu",
+      "locked": true,
+      "testsCompiled": true,
+      "result": "pass",
+      "warnings": 0
+    },
+    "nativeWindowsRegressionTests": {
+      "compiled": 3,
+      "executed": 0,
+      "reason": "Linux host; not Windows runtime",
+      "coverage": [
+        "Hidden HWND and Tao-style rewrites keep client/outer bounds with changing native regions",
+        "Zero extended style is valid and cross-thread subclass installation is refused",
+        "A reentrant replacement cancels preparation without overwriting newer cursor flags"
+      ]
+    },
+    "independentReview": "approved; callback chain, teardown, UI thread, last-error handling, flag preservation and generation guards reviewed",
+    "diffCheck": "pass"
+  },
+  "implementation": {
+    "normalStyleMask": "WS_CAPTION | WS_THICKFRAME",
+    "extendedStyleMask": "WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE",
+    "lifecycle": "Stateless per-widget HWND subclass, WM_STYLECHANGING filter and WM_NCDESTROY removal",
+    "initialFrameUpdate": "Only if decorative bits were present, FRAMECHANGED with no move/resize/activation/z-order change",
+    "reentrancy": "Existing frame-generation token checked between operations; EX styles read after normal-style write",
+    "dependencyFeature": "Win32_System_Threading explicitly declared; already unified transitively before this change; no lockfile or version update"
+  }
+}

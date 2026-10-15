@@ -128,7 +128,13 @@ pub(crate) fn set_frame(window: &WebviewWindow, geometry: FrameGeometry, scale: 
     let logical = LogicalFootprint { width: f64::from(geometry.region.width) / scale, height: f64::from(geometry.region.height) / scale, scale };
     #[cfg(windows)]
     {
-        let previous = capture(window).map_err(|error| {
+        let previous = (|| {
+            // Remove caption styles before the first HRGN redraw. The policy
+            // also filters later Tao cursor/visibility style replacements.
+            crate::widget_chrome::prepare(window, &current)?;
+            if !current() { return Err("A solicitação de geometria foi substituída.".into()); }
+            capture(window)
+        })().map_err(|error| {
             state.inner.lock().unwrap_or_else(|error| error.into_inner())[slot].abort(generation);
             error
         })?;

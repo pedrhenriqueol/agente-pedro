@@ -69,6 +69,11 @@ Evidência estruturada:
 
 ## Revalidação física
 
+O usuário confirmou posteriormente que a piscada foi corrigida. A captura
+seguinte revelou uma legenda nativa atrás dos widgets, tratada separadamente
+em [DESIGN_REPORT_WIDGET_CAPTION.md](DESIGN_REPORT_WIDGET_CAPTION.md),
+preservando a preparação estável desta entrega.
+
 Chromium e IPC simulados verificam estados, limites, âncoras e ordem das
 operações. Não comprovam a composição DWM/WebView2 nem cliques entre processos
 no Windows. A alteração elimina o resize/movimento comum que produziu o salto
