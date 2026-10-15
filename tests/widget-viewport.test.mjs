@@ -104,3 +104,35 @@ test('invalid confirmed dimensions reject without scheduling renderer work', asy
   }
   assert.equal(env.pending(), 0);
 });
+
+test('a reserved viewport is confirmed independently from its compact input region', async () => {
+  const env = renderer(120, 48); let settled = false;
+  const ready = env.wait({ width: 120, height: 48, viewport: { width: 664, height: 424 } }, () => true)
+    .then(value => { settled = true; return value; });
+  env.frame(); env.frame(); await Promise.resolve();
+  assert.equal(settled, false, 'A matching footprint is not a matching WebView reservation');
+  env.frame(664, 424); await Promise.resolve(); assert.equal(settled, false);
+  env.frame(); assert.equal(await ready, true); assert.equal(env.pending(), 0);
+
+  const expand = env.wait({ width: 584, height: 345, viewport: { width: 664, height: 424 } }, () => true);
+  env.frame(); env.frame();
+  assert.equal(await expand, true, 'Opening changes the native region without resizing the WebView');
+  assert.equal(env.pending(), 0);
+});
+
+test('invalid native reservations and regions outside them cannot release a preparer', async () => {
+  const env = renderer();
+  for (const viewport of [{ width: 0, height: 424 }, { width: 664, height: Infinity },
+    { width: 90, height: 46 }, { width: 664 }, '664x424']) {
+    await assert.rejects(env.wait({ width: 120, height: 48, viewport }, () => true), /dimensões inválidas/);
+  }
+  assert.equal(env.pending(), 0);
+});
+
+test('fractional native reservation and nullable legacy responses retain rounding compatibility', async () => {
+  const env = renderer(383, 237);
+  const reserved = env.wait({ width: 383.2, height: 237.6, viewport: { width: 383.2, height: 237.6 } }, () => true);
+  env.frame(); env.frame(); assert.equal(await reserved, true);
+  const legacy = env.wait({ width: 383.2, height: 237.6, viewport: null }, () => true);
+  env.frame(); env.frame(); assert.equal(await legacy, true); assert.equal(env.pending(), 0);
+});

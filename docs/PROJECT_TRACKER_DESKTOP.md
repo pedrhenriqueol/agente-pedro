@@ -25,6 +25,7 @@
 | F14 | Ilha e menus imersivos com mascote contínuo | Alta | Motion/WAAPI, geometria e retenção existentes | Implementado; QA Windows pendente | Mola interrompível, frame reduzido após conclusão, marcador e direção, reações finitas e movimento reduzido |
 | F15 | Primeiro paint dos widgets e polimento para release | Alta | HWND/viewport, paleta e feedback existentes | Implementado; QA Windows pendente | Barreira cancelável, client antigo descartado no resize, busca por teclado e confirmação finita após persistência |
 | F16 | Prévia interativa e passagem entre meses | Média | Apresentação, preferências e agenda existentes | Implementado; QA Windows pendente | Demonstração local reversível e calendário direcional com seis semanas fixas; foco e dados preservados |
+| F17 | Viewport estável para a piscada persistente | Alta | Região Win32, DPI e contrato de preparação | Implementado; revalidação Windows pendente | Reserva fixa, recorte nativo, escala e gerações; zero mudança de host na reprodução em browser |
 
 ## 3. Riscos e bloqueios
 
@@ -74,3 +75,12 @@ prévia com teste de abertura e passagem direcional dos meses sem alterar a
 altura da ilha. Validação: 109 testes, build, cargo check Windows, oito grupos
 de QA da prévia em produção, oito de metadados e 16 cenários de calendário
 com 1531 amostras. Nenhuma alteração no backend, nos stores ou no banco.
+
+Após o usuário confirmar a persistência da piscada, a preparação foi revista
+em [DESIGN_REPORT_STABLE_WIDGET_VIEWPORT.md](DESIGN_REPORT_STABLE_WIDGET_VIEWPORT.md)
+e [SYSTEM_DESIGN_STABLE_WIDGET_VIEWPORT.md](SYSTEM_DESIGN_STABLE_WIDGET_VIEWPORT.md).
+O viewport fica reservado e a região Win32 limita desenho e interação.
+Validação: 117 testes Node, 12 políticas Rust executadas, build, cargo check
+Windows, 13 cenários de reserva fixa e cinco de compatibilidade. A reprodução
+anterior separou movimento do host e atualização da WebView; a apresentação
+física do novo executável ainda precisa ser conferida no Windows.

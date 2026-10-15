@@ -152,3 +152,37 @@ test('failed island preparation cannot strand a queued compact recovery or the n
   env.requests[2].resolve();
   await retry;
 });
+
+test('island native confirmation keeps its input footprint separate from the stable viewport', async () => {
+  const env = environment();
+  const compact = env.syncIslandSize(false, 48, 120);
+  await settle();
+  const applied = { width: 120, height: 48, viewport: { width: 664, height: 424 } };
+  env.requests[0].resolve(applied);
+  assert.deepEqual(JSON.parse(JSON.stringify(await compact)), applied);
+  const expanded = env.syncIslandSize(true, 345, 584);
+  await settle();
+  env.requests[1].resolve({ width: 584, height: 345, viewport: applied.viewport });
+  assert.equal((await expanded).width, 584, 'Surface constraints must use the footprint, not all 664 reserved pixels');
+});
+
+test('invalid island reservation rejects but the queued compact recovery still confirms its own footprint', async () => {
+  const env = environment();
+  const failed = assert.rejects(env.syncIslandSize(true, 345, 584), /dimensões inválidas/);
+  const compact = env.syncIslandSize(false, 48, 120);
+  await settle();
+  env.requests[0].resolve({ width: 584, height: 345, viewport: { width: 120, height: 48 } });
+  await failed; await settle();
+  const applied = { width: 120, height: 48, viewport: { width: 664, height: 424 } };
+  env.requests[1].resolve(applied);
+  assert.deepEqual(JSON.parse(JSON.stringify(await compact)), applied);
+});
+
+test('non-finite island requests cannot send invalid native regions', async () => {
+  const env = environment();
+  for (const value of [NaN, Infinity, -Infinity]) {
+    await assert.rejects(env.syncIslandSize(true, value, 584), /dimensões da ilha/);
+    await assert.rejects(env.syncIslandSize(true, 345, value), /dimensões da ilha/);
+  }
+  assert.equal(env.requests.length, 0);
+});

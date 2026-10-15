@@ -20,6 +20,13 @@ impl Side {
     fn index(self) -> usize { if self == Self::Left { 0 } else { 1 } }
     fn compact_width(self) -> f64 { if self == Self::Left { 128.0 } else { 90.0 } }
     fn maximum_width(self) -> f64 { if self == Self::Left { 384.0 } else { 304.0 } }
+    fn reservation(self) -> crate::widget_region::Reservation {
+        crate::widget_region::Reservation {
+            anchor: if self == Self::Left { crate::widget_region::Anchor::Left } else { crate::widget_region::Anchor::Right },
+            maximum_width: self.maximum_width(), maximum_height: 424.0,
+            horizontal_inset: 2.0, top_inset: 2.0, bottom_inset: 2.0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -28,11 +35,13 @@ pub struct TopControlSnapshot {
     expanded: bool,
     width: f64,
     height: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    viewport: Option<crate::widget_frame::NativeViewport>,
 }
 
 impl TopControlSnapshot {
     fn compact(side: Side) -> Self {
-        Self { visible: false, expanded: false, width: side.compact_width(), height: 46.0 }
+        Self { visible: false, expanded: false, width: side.compact_width(), height: 46.0, viewport: None }
     }
 }
 
@@ -79,17 +88,9 @@ fn dimensions(side: Side, visible: bool, expanded: bool, width: f64, height: f64
         return Ok(TopControlSnapshot { visible, ..TopControlSnapshot::compact(side) });
     }
     Ok(TopControlSnapshot { visible, expanded: true,
-        width: width.clamp(side.compact_width(), side.maximum_width()), height: height.clamp(46.0, 424.0) })
+        width: width.clamp(side.compact_width(), side.maximum_width()), height: height.clamp(46.0, 424.0), viewport: None })
 }
 
-fn placement(side: Side, mut value: TopControlSnapshot, x: i32, y: i32, area_width: u32, area_height: u32, scale: f64) -> (TopControlSnapshot, i32, i32) {
-    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
-    let inset = (2.0 * scale).round() as i32;
-    value.width = value.width.min((f64::from(area_width) - f64::from(inset * 2)).max(1.0) / scale);
-    value.height = value.height.min((f64::from(area_height) - f64::from(inset * 2)).max(1.0) / scale);
-    let left = if side == Side::Left { x + inset } else { x + area_width as i32 - (value.width * scale).round() as i32 - inset };
-    (value, left, y + inset)
-}
 // END portable top control policy
 
 #[derive(Clone, Default)]
@@ -166,26 +167,44 @@ fn schedule(app: &AppHandle, state: TopControlsState, request: Request,
     }).map_err(|error| format!("Não foi possível atualizar o controle na thread da interface: {error}"))
 }
 
+fn current_request(app: &AppHandle, request: Request) -> bool {
+    app.try_state::<TopControlsState>().is_some_and(|state| state.inner.lock().unwrap_or_else(|error| error.into_inner()).accepts(request))
+}
+fn ensure_current(app: &AppHandle, request: Request) -> Result<(), String> {
+    if current_request(app, request) { Ok(()) } else { Err("A solicitação do controle de desktop foi substituída.".into()) }
+}
+
 fn apply(app: &AppHandle, request: Request) -> Result<TopControlSnapshot, String> {
     let window = app.get_webview_window(request.side.label())
         .ok_or_else(|| "A janela do controle de desktop não está disponível.".to_string())?;
-    let previous_position = window.outer_position().map_err(|error| error.to_string())?;
-    let previous_size = window.inner_size().map_err(|error| error.to_string())?;
+    let previous_frame = crate::widget_frame::capture(&window)?;
+    let previous_logical = crate::widget_frame::logical_footprint(&window);
+    let previous_generation = crate::widget_frame::generation(&window)?;
     let previously_visible = actual_visible(&window)?;
     let result = apply_frame(app, &window, request);
     if result.is_err() {
-        // A failure after set_size must never leave an expanded transparent hit
+        // A newer request owns both presentation and input. Its failure path
+        // must never restore or reveal a previous request's frame.
+        if !current_request(app, request) { return result; }
+        let current_generation = crate::widget_frame::generation(&window)?;
+        if current_generation != previous_generation && current_generation != previous_generation.wrapping_add(1) { return result; }
+        // A failure after region/frame preparation must never leave an expanded transparent hit
         // target while the caller still renders only its compact notch.
         let visible = request.value.visible && previously_visible && app.try_state::<crate::island_visibility::IslandVisibilityState>()
             .is_none_or(|state| crate::island_visibility::is_visible(&state));
         let rollback = (|| {
-            crate::widget_frame::set_frame(&window, previous_position, previous_size)?;
+            ensure_current(app, request)?;
+            crate::widget_frame::restore(&window, previous_frame, previous_logical, current_generation)?;
+            ensure_current(app, request)?;
             window.set_ignore_cursor_events(!visible).map_err(|error| error.to_string())?;
+            ensure_current(app, request)?;
             set_native_visible(&window, visible)
         })();
         if let Err(error) = rollback {
+            if !current_request(app, request) { return result; }
             // Even if restoring bounds fails, relinquish the desktop natively.
             let _ = window.set_ignore_cursor_events(true);
+            if !current_request(app, request) { return result; }
             let _ = set_native_visible(&window, false);
             crate::diagnostics::write("top_controls_warning", format!("Falha ao restaurar o controle: {error}"));
         }
@@ -204,19 +223,37 @@ fn apply_frame(app: &AppHandle, window: &WebviewWindow, request: Request) -> Res
             .or_else(|| app.primary_monitor().ok().flatten())
             .ok_or_else(|| "O monitor do controle de desktop não está disponível.".to_string())?;
         let area = monitor.work_area();
-        let (bounded, x, y) = placement(request.side, value, area.position.x, area.position.y,
-            area.size.width, area.size.height, monitor.scale_factor());
-        value = bounded;
-        let scale = monitor.scale_factor();
-        crate::widget_frame::set_frame(window, tauri::PhysicalPosition::new(x, y),
-            tauri::PhysicalSize::new((value.width * scale).round() as u32, (value.height * scale).round() as u32))?;
+        let geometry = crate::widget_region::layout(crate::widget_region::PixelRect {
+            x: area.position.x, y: area.position.y, width: area.size.width, height: area.size.height,
+        }, monitor.scale_factor(), request.side.reservation(), value.width, value.height);
+        crate::widget_frame::set_frame(window, geometry, monitor.scale_factor())?;
+        let frame = crate::widget_frame::snapshot(geometry, monitor.scale_factor());
+        value.width = frame.width;
+        value.height = frame.height;
+        value.viewport = frame.viewport;
     }
+    ensure_current(app, request)?;
     let cursor = window.set_ignore_cursor_events(!value.visible)
         .map_err(|error| format!("Não foi possível atualizar a interação nativa do controle: {error}"));
     if value.visible { cursor.as_ref().map_err(Clone::clone)?; }
+    ensure_current(app, request)?;
     set_native_visible(window, value.visible)?;
+    ensure_current(app, request)?;
     cursor?;
     Ok(value)
+}
+
+pub(crate) fn reframe(app: &AppHandle, label: &str, width: f64, height: f64) -> Result<(), String> {
+    let side = Side::parse(label)?;
+    let window = app.get_webview_window(label).ok_or_else(|| "O controle de desktop não está disponível.".to_string())?;
+    let monitor = app.get_webview_window("island").and_then(|island| island.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "O monitor do controle de desktop não está disponível.".to_string())?;
+    let area = monitor.work_area();
+    let geometry = crate::widget_region::layout(crate::widget_region::PixelRect {
+        x: area.position.x, y: area.position.y, width: area.size.width, height: area.size.height,
+    }, monitor.scale_factor(), side.reservation(), width, height);
+    crate::widget_frame::set_frame(&window, geometry, monitor.scale_factor())
 }
 
 fn actual_visible(window: &WebviewWindow) -> Result<bool, String> {
@@ -301,15 +338,21 @@ mod tests {
         for scale in [1.0, 1.25, 1.5, 2.0] {
             for side in [Side::Left, Side::Right] {
                 let request = dimensions(side, true, true, 384.0, 424.0).unwrap();
-                let (value, x, y) = placement(side, request, -1920, 40, 1920, 1040, scale);
+                let geometry = crate::widget_region::layout(crate::widget_region::PixelRect {
+                    x: -1920, y: 40, width: 1920, height: 1040,
+                }, scale, side.reservation(), request.width, request.height);
+                let x = geometry.viewport.x + geometry.region.x;
+                let y = geometry.viewport.y + geometry.region.y;
                 assert!(x >= -1920 && y >= 40);
-                assert!(f64::from(x) + value.width * scale <= 0.0);
-                assert!(f64::from(y) + value.height * scale <= 1080.0);
+                assert!(x + geometry.region.width as i32 <= 0);
+                assert!(y + geometry.region.height as i32 <= 1080);
             }
         }
-        let (value, x, y) = placement(Side::Right, dimensions(Side::Right, true, true, 304.0, 424.0).unwrap(), 0, 0, 160, 140, 2.0);
-        assert!(f64::from(x) + value.width * 2.0 <= 160.0);
-        assert!(f64::from(y) + value.height * 2.0 <= 140.0);
+        let geometry = crate::widget_region::layout(crate::widget_region::PixelRect {
+            x: 0, y: 0, width: 160, height: 140,
+        }, 2.0, Side::Right.reservation(), 304.0, 424.0);
+        assert!(geometry.viewport.x + geometry.region.x + geometry.region.width as i32 <= 160);
+        assert!(geometry.viewport.y + geometry.region.y + geometry.region.height as i32 <= 140);
     }
 }
 // END portable top control tests

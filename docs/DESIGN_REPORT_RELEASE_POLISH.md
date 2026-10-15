@@ -96,6 +96,12 @@ Stores, SQL, registros financeiros, skills e templates do usuário não mudaram.
 
 ## Limite da validação e roteiro Windows
 
+**Retorno posterior:** o usuário ainda percebeu a piscada na máquina Windows.
+O novo diagnóstico e a mudança da preparação estão em
+[DESIGN_REPORT_STABLE_WIDGET_VIEWPORT.md](DESIGN_REPORT_STABLE_WIDGET_VIEWPORT.md).
+Os números desta entrega documentam a camada DOM/IPC, sem comprovar que a
+correção anterior eliminou o intervalo de composição nativa.
+
 Chromium com IPC simulado valida DOM, viewport, estados e a ordem da abertura.
 Não comprova descarte de texturas antigas do DWM/WebView2 ou taxa de quadros
 física. A flag nativa é fundamentada pela API Windows; seu efeito visual na

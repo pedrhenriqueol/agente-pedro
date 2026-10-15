@@ -1,0 +1,236 @@
+{
+  "date": "2026-10-15",
+  "baseCommit": "bea1707f9ce214830393817dfeff737f6380eb59",
+  "scope": "Stable native widget reservation, Win32 drawing/input region, generation-safe preparation and DPI reflow",
+  "previousGapReproduction": [
+    {
+      "label": "island",
+      "anchor": 640,
+      "maximumDeviation": 232,
+      "staleViewportSamples": 4
+    },
+    {
+      "label": "top-right",
+      "anchor": 1272,
+      "maximumDeviation": 214,
+      "staleViewportSamples": 4
+    }
+  ],
+  "checks": {
+    "nodeTests": {
+      "pass": 117,
+      "fail": 0,
+      "skipped": 0
+    },
+    "productionBuild": "pass",
+    "windowsCrossCheck": {
+      "target": "x86_64-pc-windows-gnu",
+      "testsCompiled": true,
+      "result": "pass",
+      "windowsTestsExecuted": false
+    },
+    "portableRustPolicyTests": {
+      "pass": 12,
+      "fail": 0,
+      "skipped": 0
+    },
+    "independentGeometryCombinations": 9720
+  },
+  "stableReservationBrowser": {
+    "cases": 13,
+    "pass": 13,
+    "samples": 941,
+    "results": [
+      {
+        "name": "island stable host, region delay0",
+        "label": "island",
+        "pass": true,
+        "samples": 64,
+        "nativeFrameChanges": 0,
+        "regionChanges": 4,
+        "maxCenterError": 0.0078125
+      },
+      {
+        "name": "island stable host, region delay160",
+        "label": "island",
+        "pass": true,
+        "samples": 124,
+        "nativeFrameChanges": 0,
+        "regionChanges": 4,
+        "maxCenterError": 0.0078125
+      },
+      {
+        "name": "top-left stable host, region delay0",
+        "label": "top-left",
+        "pass": true,
+        "samples": 41,
+        "nativeFrameChanges": 0,
+        "regionChanges": 2,
+        "maxCenterError": null
+      },
+      {
+        "name": "top-left stable host, region delay160",
+        "label": "top-left",
+        "pass": true,
+        "samples": 87,
+        "nativeFrameChanges": 0,
+        "regionChanges": 2,
+        "maxCenterError": null
+      },
+      {
+        "name": "top-right stable host, region delay0",
+        "label": "top-right",
+        "pass": true,
+        "samples": 40,
+        "nativeFrameChanges": 0,
+        "regionChanges": 2,
+        "maxCenterError": null
+      },
+      {
+        "name": "top-right stable host, region delay160",
+        "label": "top-right",
+        "pass": true,
+        "samples": 88,
+        "nativeFrameChanges": 0,
+        "regionChanges": 2,
+        "maxCenterError": null
+      },
+      {
+        "name": "island reverse while preparing",
+        "label": "island",
+        "pass": true,
+        "samples": 140,
+        "nativeFrameChanges": 0,
+        "regionChanges": 7,
+        "maxCenterError": 0.0078125
+      },
+      {
+        "name": "top-right reverse while preparing",
+        "label": "top-right",
+        "pass": true,
+        "samples": 139,
+        "nativeFrameChanges": 0,
+        "regionChanges": 4,
+        "maxCenterError": null
+      },
+      {
+        "name": "island reduced during opening",
+        "label": "island",
+        "pass": true,
+        "samples": 18,
+        "nativeFrameChanges": 0,
+        "regionChanges": 4,
+        "maxCenterError": 0.0078125
+      },
+      {
+        "name": "top-right reduced during opening",
+        "label": "top-right",
+        "pass": true,
+        "samples": 15,
+        "nativeFrameChanges": 0,
+        "regionChanges": 2,
+        "maxCenterError": null
+      },
+      {
+        "name": "island rejected region growth recovers",
+        "label": "island",
+        "pass": true,
+        "samples": 97,
+        "nativeFrameChanges": 0,
+        "regionChanges": 6,
+        "maxCenterError": 0.0078125
+      },
+      {
+        "name": "top-left rejected region growth recovers",
+        "label": "top-left",
+        "pass": true,
+        "samples": 45,
+        "nativeFrameChanges": 0,
+        "regionChanges": 2,
+        "maxCenterError": null
+      },
+      {
+        "name": "top-right rejected region growth recovers",
+        "label": "top-right",
+        "pass": true,
+        "samples": 43,
+        "nativeFrameChanges": 0,
+        "regionChanges": 2,
+        "maxCenterError": null
+      }
+    ],
+    "maximumCenterDeviation": 0.0078125,
+    "hostPositionAndSizeChanges": 0,
+    "outsideCompactRegionClicks": "Parent desktop fixture receives clicks beneath the reserved iframe after collapsing; native hit testing remains a Windows check"
+  },
+  "legacyBrowser": {
+    "cases": 5,
+    "pass": 5,
+    "samples": 304,
+    "results": [
+      {
+        "name": "island: production first paint waits real viewport160ms",
+        "label": "island",
+        "pass": true,
+        "samples": 70,
+        "preResizeSamples": 11,
+        "ipcFrame": 7,
+        "viewportFrame": 18,
+        "firstGrowthFrame": 21
+      },
+      {
+        "name": "top-right: production first paint waits real viewport160ms",
+        "label": "top-right",
+        "pass": true,
+        "samples": 39,
+        "preResizeSamples": 11,
+        "ipcFrame": 8,
+        "viewportFrame": 19,
+        "firstGrowthFrame": 22
+      },
+      {
+        "name": "top-left: production first paint waits real viewport160ms",
+        "label": "top-left",
+        "pass": true,
+        "samples": 39,
+        "preResizeSamples": 11,
+        "ipcFrame": 8,
+        "viewportFrame": 19,
+        "firstGrowthFrame": 22
+      },
+      {
+        "name": "island: production reduced during active spring",
+        "label": "island",
+        "pass": true,
+        "reducedSettled": true
+      },
+      {
+        "name": "top-right: production reduced during active spring",
+        "label": "top-right",
+        "pass": true,
+        "reducedSettled": true
+      }
+    ]
+  },
+  "nativeReview": [
+    "SetWindowRgn ownership and failure cleanup",
+    "Frame plus region rollback; generation guards prevent older rollback from overwriting a newer request",
+    "Cursor/show/hide operations release policy locks and check ownership",
+    "Builder-managed ephemeral metadata uses try_state",
+    "DPI events enqueue reflow for MainEventsCleared, preserving logical footprint; failed reflow does not loop",
+    "Hybrid worker and corner interaction read effective region bounds",
+    "A late cursor/show failure restoring old-DPI pixels requeues one generation-guarded reflow"
+  ],
+  "limits": [
+    "Production Chromium with simulated native IPC and iframe clipping is not execution of Windows HWND, HRGN, DWM/WebView2 or cross-process native hit testing.",
+    "The displaced-before-renderer scenario is a controlled reproduction, not a new capture from the user computer.",
+    "Physical Windows click/hover, hybrid, multi-monitor, DPI and first-frame composition need revalidation after rebuilding the executable."
+  ],
+  "unchanged": [
+    "Stores and SQL/schema/data rules",
+    "Media integration",
+    "Alt+Space behavior",
+    "Windows Shell",
+    "User skills and templates"
+  ]
+}

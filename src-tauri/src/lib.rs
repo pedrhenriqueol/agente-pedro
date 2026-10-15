@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod media;
@@ -9,6 +9,7 @@ mod diagnostics;
 mod dock_visibility;
 mod top_controls;
 mod widget_frame;
+mod widget_region;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -38,23 +39,16 @@ const DOCK_WIDTH: f64 = 450.0;
 const DOCK_HEIGHT: f64 = 88.0;
 
 pub fn centralizar_ilha_topo(app: &AppHandle) {
-    if let Some(janela) = app.get_webview_window("island") {
-        let monitor = janela.current_monitor().ok().flatten()
-            .or_else(|| app.primary_monitor().ok().flatten());
-        if let Some(monitor) = monitor {
-            let scale = monitor.scale_factor();
-            let area = monitor.work_area();
-            let width = janela.outer_size().map(|size| size.width as i32)
-                .unwrap_or_else(|_| (ISLAND_WIDTH * scale).round() as i32);
-            let x = area.position.x + (area.size.width as i32 - width) / 2;
-            // The surface attaches to the work-area top; its shadow margin is below.
-            let y = area.position.y + (2.0 * scale).round() as i32;
-            let _ = janela.set_position(PhysicalPosition::new(x, y));
-        }
+    let footprint = app.get_webview_window("island").and_then(|island| {
+        let logical = widget_frame::logical_footprint(&island)?;
+        Some((logical.width, logical.height))
+    }).unwrap_or((ISLAND_WIDTH, ISLAND_COMPACT_HEIGHT));
+    if let Err(error) = resize_island_frame(app, footprint.0, footprint.1) {
+        diagnostics::write("island_frame_warning", error);
     }
 }
 
-/// Prepare the complete native frame before React starts its size animation.
+/// Reserve a stable viewport and adjust its native drawing/input footprint.
 /// Position and dimensions use the current monitor's work area, including DPI.
 pub(crate) fn resize_island_frame(app: &AppHandle, width: f64, height: f64) -> Result<widget_frame::WidgetViewport, String> {
     if !width.is_finite() || !height.is_finite() {
@@ -67,19 +61,15 @@ pub(crate) fn resize_island_frame(app: &AppHandle, width: f64, height: f64) -> R
         .ok_or_else(|| "O monitor da ilha não está disponível.".to_string())?;
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
-    let width = width.clamp(96.0, 664.0).min(f64::from(area.size.width) / scale);
-    let height = height.clamp(ISLAND_COMPACT_HEIGHT, ISLAND_EXPANDED_HEIGHT)
-        .min((f64::from(area.size.height) / scale - 2.0).max(1.0));
-    let physical_width = (width * scale).round() as i32;
-    let physical_height = (height * scale).round() as u32;
-    let x = area.position.x + (area.size.width as i32 - physical_width) / 2;
-    let y = area.position.y + (2.0 * scale).round() as i32;
-    widget_frame::set_frame(&island, PhysicalPosition::new(x, y),
-        PhysicalSize::new(physical_width as u32, physical_height))?;
-    Ok(widget_frame::WidgetViewport {
-        width: f64::from(physical_width) / scale,
-        height: f64::from(physical_height) / scale,
-    })
+    let geometry = widget_region::layout(widget_region::PixelRect {
+        x: area.position.x, y: area.position.y, width: area.size.width, height: area.size.height,
+    }, scale, widget_region::Reservation {
+        anchor: widget_region::Anchor::Center, maximum_width: 664.0,
+        maximum_height: ISLAND_EXPANDED_HEIGHT, horizontal_inset: 0.0,
+        top_inset: 2.0, bottom_inset: 0.0,
+    }, width.clamp(96.0, 664.0), height.clamp(ISLAND_COMPACT_HEIGHT, ISLAND_EXPANDED_HEIGHT));
+    widget_frame::set_frame(&island, geometry, scale)?;
+    Ok(widget_frame::snapshot(geometry, scale))
 }
 
 pub fn centralizar_dock_base(app: &AppHandle) {
@@ -188,6 +178,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| desktop_integration::handle_launch_args(app, &args)))
         .manage(media::MediaState::default())
         .manage(island_visibility::IslandVisibilityState::default())
+        .manage(widget_frame::WidgetFrameState::default())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -230,6 +221,7 @@ pub fn run() {
             match event {
                 tauri::WindowEvent::CloseRequested { .. } => diagnostics::write("window_close_requested", window.label()),
                 tauri::WindowEvent::Destroyed => diagnostics::write("window_destroyed", window.label()),
+                tauri::WindowEvent::ScaleFactorChanged { .. } => widget_frame::schedule_dpi(window.app_handle(), window.label()),
                 _ => {}
             }
         })
@@ -242,7 +234,9 @@ pub fn run() {
             }
             diagnostics::write("media", "Iniciando serviço de música");
             media::start(&handle);
-            centralizar_ilha_topo(&handle);
+            if let Err(error) = resize_island_frame(&handle, ISLAND_WIDTH, ISLAND_COMPACT_HEIGHT) {
+                diagnostics::write("island_frame_warning", error);
+            }
             top_controls::init(&handle);
             diagnostics::write("visibility", "Iniciando visibilidade da ilha");
             island_visibility::start(&handle);
@@ -266,8 +260,9 @@ pub fn run() {
         }
     };
     diagnostics::write("run", "Iniciando event loop");
-    app.run(|_, event| match event {
+    app.run(|app, event| match event {
         tauri::RunEvent::Ready => diagnostics::write("runtime_ready", "Event loop pronto"),
+        tauri::RunEvent::MainEventsCleared => widget_frame::refresh_pending(app),
         tauri::RunEvent::ExitRequested { code, .. } => diagnostics::write("exit_requested", format!("code={code:?}")),
         tauri::RunEvent::Exit => diagnostics::write("exit", "Runtime encerrado"),
         _ => {}

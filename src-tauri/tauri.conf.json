@@ -21,7 +21,7 @@
         "alwaysOnTop": true,
         "resizable": false,
         "shadow": false,
-        "visible": true,
+        "visible": false,
         "url": "index.html?window=island",
         "focus": false,
         "skipTaskbar": true

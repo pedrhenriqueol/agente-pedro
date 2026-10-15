@@ -1,7 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { normalizeWidgetViewport, type WidgetViewport } from '../lib/widgetViewport';
 
 export type TopControlLabel = 'top-left' | 'top-right';
-export interface TopControlFrame { visible: boolean; expanded: boolean; width: number; height: number }
+export interface TopControlFrame extends WidgetViewport { visible: boolean; expanded: boolean }
 
 interface Batch {
   frame: TopControlFrame;
@@ -14,7 +15,7 @@ const queues: Record<TopControlLabel, Queue> = {
 
 /** Each corner has one native owner and a queue independent of the other one. */
 export function configureTopControl(label: TopControlLabel, frame: TopControlFrame): Promise<TopControlFrame> {
-  if (!Number.isFinite(frame.width) || !Number.isFinite(frame.height)) {
+  if (![frame.width, frame.height].every(value => Number.isFinite(value) && value > 0)) {
     return Promise.reject(new Error('As dimensões do controle de desktop não são válidas.'));
   }
   if (!isTauri()) return Promise.resolve({ ...frame });
@@ -34,8 +35,13 @@ async function flush(label: TopControlLabel): Promise<void> {
       const batch = queue.pending;
       queue.pending = null;
       try {
-        const result = await invoke<TopControlFrame>('configure_top_control', { label, ...batch.frame });
-        batch.waiters.forEach(waiter => waiter.resolve(result));
+        const { visible, expanded, width, height } = batch.frame;
+        const result = await invoke<TopControlFrame>('configure_top_control', { label, visible, expanded, width, height });
+        const confirmed = normalizeWidgetViewport(result);
+        if (typeof result.visible !== 'boolean' || typeof result.expanded !== 'boolean') {
+          throw new Error('A janela retornou uma configuração inválida.');
+        }
+        batch.waiters.forEach(waiter => waiter.resolve({ ...confirmed, visible: result.visible, expanded: result.expanded }));
       } catch (error) { batch.waiters.forEach(waiter => waiter.reject(error)); }
     }
   } finally { queue.running = false; }

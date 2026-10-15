@@ -65,3 +65,13 @@ tamanho real; separar limites DOM/IPC da apresentação de pixels no Windows.
 Implementado nos comandos existentes, sem nova permissão nem dependência.
 Verificação da entrega e limites físicos em
 [DESIGN_REPORT_RELEASE_POLISH.md](DESIGN_REPORT_RELEASE_POLISH.md).
+
+## Continuação após retorno do usuário
+
+O usuário confirmou que a piscada persiste no Windows. Uma reprodução que
+separa movimento do HWND e atualização do renderer mostra que a barreira
+acima ocorre depois do intervalo problemático. A evolução em
+[SYSTEM_DESIGN_STABLE_WIDGET_VIEWPORT.md](SYSTEM_DESIGN_STABLE_WIDGET_VIEWPORT.md)
+remove o resize/movimento durante a abertura comum, usando viewport reservado
+e recorte nativo. A barreira continua útil para inicialização e mudança de
+monitor; não deve ser descrita isoladamente como solução física confirmada.

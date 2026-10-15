@@ -441,7 +441,11 @@ pub fn start(app: &AppHandle) {
     #[cfg(windows)]
     platform::start(app);
     #[cfg(not(windows))]
-    let _ = app;
+    if let Some(island) = app.get_webview_window("island") {
+        // The configuration starts hidden so Windows can reserve/clip first.
+        // Other desktop platforms retain their existing small-frame fallback.
+        let _ = island.show();
+    }
 }
 
 #[cfg(windows)]
@@ -635,8 +639,7 @@ mod platform {
     fn observe(app: &AppHandle, raw: usize, compact: CompactFrame) -> Result<Observation, String> {
         unsafe {
             let island = hwnd(raw);
-            let mut window_rect = RECT::default();
-            GetWindowRect(island, &mut window_rect).map_err(|error| error.to_string())?;
+            let window_rect = crate::widget_frame::effective_bounds(island)?;
             let monitor = MonitorFromWindow(island, MONITOR_DEFAULTTONEAREST);
             let mut info = MONITORINFO {
                 cbSize: std::mem::size_of::<MONITORINFO>() as u32,
@@ -687,8 +690,7 @@ mod platform {
                 let Some(control) = app.get_webview_window(label) else { return false; };
                 let Ok(handle) = control.hwnd() else { return false; };
                 if !IsWindowVisible(handle).as_bool() { return false; }
-                let mut rect = RECT::default();
-                GetWindowRect(handle, &mut rect).is_ok() && bounds(rect).contains(cursor.x, cursor.y)
+                crate::widget_frame::effective_bounds(handle).is_ok_and(|rect| bounds(rect).contains(cursor.x, cursor.y))
             });
             Ok(observation.with_controls(pointer_inside_control))
         }

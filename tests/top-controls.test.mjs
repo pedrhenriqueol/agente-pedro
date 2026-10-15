@@ -33,7 +33,9 @@ test('Top controls preview returns its frame without creating native windows and
   const env = environment(false);
   assert.deepEqual(plain(await env.configureTopControl('top-left', frame(true))), frame(true));
   assert.deepEqual(plain(await env.configureTopControl('top-left', frame(false))), frame(false));
-  await assert.rejects(env.configureTopControl('top-left', { ...frame(true), width: NaN }), /dimensões/);
+  for (const width of [NaN, 0, -1, Infinity]) {
+    await assert.rejects(env.configureTopControl('top-left', { ...frame(true), width }), /dimensões/);
+  }
   assert.equal(env.requests.length, 0);
 });
 
@@ -79,4 +81,30 @@ test('A rejected prepare reports its error, still applies queued hide and permit
   const retry = env.configureTopControl('top-left', frame(true));
   env.requests[2].resolve(frame(true));
   assert.equal((await retry).visible, true);
+});
+
+test('corner geometry preserves its stable viewport but never sends derived reservation metadata to native', async () => {
+  const env = environment();
+  const opening = env.configureTopControl('top-right', { visible: true, expanded: true, width: 304, height: 176 });
+  const applied = { visible: true, expanded: true, width: 304, height: 176, viewport: { width: 304, height: 424 } };
+  env.requests[0].resolve(applied);
+  const confirmed = await opening;
+  assert.deepEqual(plain(confirmed), applied);
+  const compact = env.configureTopControl('top-right', { ...confirmed, expanded: false, width: 90, height: 46 });
+  assert.deepEqual(plain(env.requests[1].args), { label: 'top-right', visible: true, expanded: false, width: 90, height: 46 });
+  env.requests[1].resolve({ ...applied, expanded: false, width: 90, height: 46 });
+  assert.equal((await compact).width, 90, 'The compact footprint remains 90px inside its 304px reservation');
+});
+
+test('invalid native corner geometry rejects all pending callers and leaves hide recovery usable', async () => {
+  const env = environment();
+  const opening = assert.rejects(env.configureTopControl('top-left', frame(true, true)), /dimensões inválidas/);
+  const hide = env.configureTopControl('top-left', frame(false));
+  env.requests[0].resolve({ ...frame(true, true), viewport: { width: 128, height: 46 } });
+  await opening; await settle();
+  env.requests[1].resolve({ ...frame(false), viewport: { width: 384, height: 424 } });
+  assert.equal((await hide).visible, false);
+  const retry = assert.rejects(env.configureTopControl('top-left', frame(true)), /configuração inválida/);
+  env.requests[2].resolve({ ...frame(true), visible: undefined });
+  await retry;
 });

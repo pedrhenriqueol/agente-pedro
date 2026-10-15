@@ -1,5 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import type { WidgetViewport } from './widgetViewport';
+import { normalizeWidgetViewport, type WidgetViewport } from './widgetViewport';
 
 export type DesktopPage = 'home' | 'routine' | 'finance' | 'music' | 'appearance';
 export type Page = DesktopPage;
@@ -31,9 +31,12 @@ export async function requestPage(page: DesktopPage): Promise<void> {
   }
 }
 
-/** Native sizes include the transparent padding that contains the widget shadow. */
+/** Native footprints include the transparent padding that contains the widget shadow. */
 let islandSizeQueue: Promise<unknown> = Promise.resolve();
 export async function syncIslandSize(expanded: boolean, frameHeight = expanded ? 284 : 48, frameWidth = expanded ? 584 : 120): Promise<WidgetViewport> {
+  if (![frameWidth, frameHeight].every(Number.isFinite)) {
+    throw new Error('As dimensões da ilha não são válidas.');
+  }
   const dimensions = {
     altura: Math.max(48, Math.min(424, frameHeight)),
     largura: Math.max(96, Math.min(664, frameWidth)),
@@ -44,11 +47,7 @@ export async function syncIslandSize(expanded: boolean, frameHeight = expanded ?
   const request = islandSizeQueue.catch(() => {}).then(async () => {
     const result = await invoke<WidgetViewport | undefined>(expanded ? 'expandir_ilha' : 'recolher_ilha', dimensions);
     // Older development backends and isolated IPC fixtures returned no payload.
-    const frame = result ?? { width: dimensions.largura, height: dimensions.altura };
-    if (![frame.width, frame.height].every(value => Number.isFinite(value) && value > 0)) {
-      throw new Error('A janela retornou dimensões inválidas.');
-    }
-    return frame;
+    return normalizeWidgetViewport(result ?? { width: dimensions.largura, height: dimensions.altura });
   });
   islandSizeQueue = request;
   return request;
