@@ -57,3 +57,21 @@ Implementado em `widget_chrome.rs`, com integração na preparação já protegi
 por geração. Três políticas portáteis, 117 testes Node, build e checagem
 Windows com testes compilados aprovados. Detalhes e roteiro físico em
 [DESIGN_REPORT_WIDGET_CAPTION.md](DESIGN_REPORT_WIDGET_CAPTION.md).
+
+## Complemento — contorno branco residual
+
+Após o build no Windows 11 (26200, tema escuro), a faixa sumiu, mas um contorno
+claro de 1 px permaneceu na borda do HRGN (fora da cápsula, na margem de
+sombra) ao interagir. Remover estilos não basta, por dois caminhos nativos:
+
+- O DWM do Windows 11 desenha borda clara em janelas top-level não layered.
+  Ao interagir, `set_ignore_cursor_events(false)` retira `WS_EX_LAYERED` e a
+  borda aparece. Os widgets não recebem modo escuro, logo ela é clara.
+- Com HRGN, a renderização não cliente do DWM fica desligada; `WM_NCPAINT`,
+  `WM_NCACTIVATE` e as mensagens uxtheme `WM_NCUAHDRAWCAPTION/FRAME` pintam a
+  moldura clássica sobre as bordas do WebView.
+
+Correção na mesma subclass: `DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE` na
+instalação; `WM_NCPAINT` e `WM_NCUAHDRAW*` retornam 0; `WM_NCACTIVATE` segue
+para o Tao com `lParam = -1` (foco preservado, sem repintar a moldura).
+Sem mudança em geometria, HRGN, curvas, CSS ou janela principal.

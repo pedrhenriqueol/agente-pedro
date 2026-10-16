@@ -22,16 +22,33 @@ pub(crate) fn prepare(window: &tauri::WebviewWindow, current: &impl Fn() -> bool
 mod native {
     use super::{edge_style, frame_style};
     use windows::Win32::Foundation::{GetLastError, SetLastError, HWND, LPARAM, LRESULT, WIN32_ERROR, WPARAM};
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::Shell::{DefSubclassProc, GetWindowSubclass, RemoveWindowSubclass, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, GetWindowThreadProcessId, SetWindowLongPtrW, SetWindowPos,
         GWL_EXSTYLE, GWL_STYLE, STYLESTRUCT, SWP_FRAMECHANGED, SWP_NOACTIVATE,
         SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
-        WINDOW_LONG_PTR_INDEX, WM_NCDESTROY, WM_STYLECHANGING,
+        WINDOW_LONG_PTR_INDEX, WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT, WM_STYLECHANGING,
     };
 
     const SUBCLASS_ID: usize = 0x5044_4348; // "PDCH"; separate from Tao/Wry IDs.
+    // Undocumented uxtheme messages that paint caption/frame when DWM
+    // non-client rendering is off (always the case once a window has a HRGN).
+    const WM_NCUAHDRAWCAPTION: u32 = 0x00ae;
+    const WM_NCUAHDRAWFRAME: u32 = 0x00af;
+    const DWMWA_COLOR_NONE: u32 = 0xffff_fffe;
+
+    /// Windows 11 draws a light 1px border around non-layered top-level
+    /// windows; it appears whenever click-through is lifted for interaction.
+    /// Older builds reject the attribute, which is harmless.
+    fn remove_dwm_border(hwnd: HWND) {
+        let none = DWMWA_COLOR_NONE;
+        unsafe {
+            let _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR,
+                &none as *const u32 as _, std::mem::size_of::<u32>() as u32);
+        }
+    }
 
     fn failure(operation: &str, error: WIN32_ERROR) -> String {
         format!("{operation} falhou ao preparar a moldura do widget (Win32 {}).", error.0)
@@ -76,6 +93,7 @@ mod native {
                 if !SetWindowSubclass(hwnd, Some(subclass), SUBCLASS_ID, 0).as_bool() {
                     return Err(failure("SetWindowSubclass", GetLastError()));
                 }
+                remove_dwm_border(hwnd);
             }
         }
         ensure_current(current)?;
@@ -112,6 +130,17 @@ mod native {
         _id: usize, _data: usize,
     ) -> LRESULT {
         unsafe {
+            // These widgets have no non-client area (Tao's WM_NCCALCSIZE returns
+            // the full window as client). With a HRGN, DefWindowProc and uxtheme
+            // paint the classic frame directly over the WebView edges.
+            if message == WM_NCPAINT || message == WM_NCUAHDRAWCAPTION || message == WM_NCUAHDRAWFRAME {
+                return LRESULT(0);
+            }
+            if message == WM_NCACTIVATE {
+                // Keep Tao's focus bookkeeping; lParam -1 tells DefWindowProc
+                // to skip repainting the frame on activation changes.
+                return DefSubclassProc(hwnd, message, wparam, LPARAM(-1));
+            }
             if message == WM_STYLECHANGING && lparam.0 != 0 {
                 let styles = &mut *(lparam.0 as *mut STYLESTRUCT);
                 if wparam.0 as i32 == GWL_STYLE.0 {
