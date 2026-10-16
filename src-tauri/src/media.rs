@@ -206,7 +206,6 @@ mod platform {
     use std::thread;
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
     use tauri::{Emitter, Manager};
-    use windows::core::{IUnknown, Interface};
     use windows::Media::Control::{
         GlobalSystemMediaTransportControlsSession as Session,
         GlobalSystemMediaTransportControlsSessionManager as SessionManager,
@@ -371,43 +370,81 @@ mod platform {
             .is_ok_and(|status| status == PlaybackStatus::Playing)
     }
 
-    fn select_session(manager: &SessionManager) -> windows::core::Result<Option<Session>> {
-        let sessions = manager.GetSessions()?;
-        let count = sessions.Size()?;
+    fn select_session(manager: &SessionManager) -> Option<Session> {
+        let sessions = manager.GetSessions().ok()?;
+        let count = sessions.Size().ok()?;
         if count == 0 {
-            return Ok(None);
+            return None;
         }
-        // GSMTC returns a null object when no current session was designated.
-        let current = match manager.GetCurrentSession() {
-            Ok(current) => Some(current),
-            Err(error) if error.code() == windows::core::HRESULT(0x80004003u32 as i32) => None,
-            Err(error) => return Err(error),
-        };
-        if current.as_ref().is_some_and(is_playing) {
-            return Ok(current);
-        }
-        for index in 0..count {
-            let candidate = sessions.GetAt(index)?;
-            if is_playing(&candidate) {
-                return Ok(Some(candidate));
+
+        // GetCurrentSession is a hint from Windows. It can fail or return null
+        // when the media app is running in the background. Never fail on error.
+        let current = manager.GetCurrentSession().ok();
+
+        // 1. If current session is actively playing, use it.
+        if let Some(curr) = &current {
+            if is_playing(curr) {
+                return Some(curr.clone());
             }
         }
-        match current {
-            Some(current) => Ok(Some(current)),
-            None => Ok(Some(sessions.GetAt(0)?)),
+
+        // 2. Scan all sessions: find any session actively playing.
+        let mut candidate_paused = None;
+        for index in 0..count {
+            if let Ok(candidate) = sessions.GetAt(index) {
+                if is_playing(&candidate) {
+                    return Some(candidate);
+                }
+                if candidate_paused.is_none() {
+                    if let Ok(info) = candidate.GetPlaybackInfo() {
+                        if let Ok(status) = info.PlaybackStatus() {
+                            if status == PlaybackStatus::Paused {
+                                candidate_paused = Some(candidate);
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        // 3. Fallbacks when nothing is currently playing (e.g. track change, paused tab):
+        if let Some(curr) = current {
+            if let Ok(info) = curr.GetPlaybackInfo() {
+                if let Ok(status) = info.PlaybackStatus() {
+                    if status != PlaybackStatus::Closed && status != PlaybackStatus::Stopped {
+                        return Some(curr);
+                    }
+                }
+            }
+        }
+
+        if let Some(paused) = candidate_paused {
+            return Some(paused);
+        }
+
+        // 4. Any session not closed
+        for index in 0..count {
+            if let Ok(candidate) = sessions.GetAt(index) {
+                if let Ok(info) = candidate.GetPlaybackInfo() {
+                    if let Ok(status) = info.PlaybackStatus() {
+                        if status != PlaybackStatus::Closed {
+                            return Some(candidate);
+                        }
+                    }
+                }
+            }
+        }
+
+        sessions.GetAt(0).ok()
     }
 
     fn session_id(session: &Session) -> windows::core::Result<String> {
-        // COM IUnknown identity distinguishes two sessions from the same browser.
-        // Hashing makes the opaque UI token independent of pointer formatting.
-        let identity: IUnknown = session.cast()?;
+        // Use the application model id to generate a deterministic, stable session id.
+        // WinRT COM pointer addresses are transient proxies on the heap and must not
+        // be hashed into the session identity.
+        let app_id = session.SourceAppUserModelId()?.to_string();
         let mut hasher = DefaultHasher::new();
-        (identity.as_raw() as usize).hash(&mut hasher);
-        session
-            .SourceAppUserModelId()?
-            .to_string()
-            .hash(&mut hasher);
+        app_id.hash(&mut hasher);
         Ok(format!("{:016x}", hasher.finish()))
     }
 
@@ -505,29 +542,28 @@ mod platform {
             },
             Err(_) => (None, None),
         };
-        match select_session(manager).and_then(|session| {
-            // Keep the COM object alive between polls. Canonical IUnknown identity
-            // is stable while held, even when GSMTC returns another wrapper.
-            *retained_session = session;
-            retained_session
-                .as_ref()
-                .map(|session| read_session(session, artwork))
-                .transpose()
-        }) {
-            Ok(session) => MediaSnapshot {
-                session,
-                volume,
-                muted,
-                ..MediaSnapshot::default()
+        let session = match select_session(manager) {
+            Some(candidate) => match read_session(&candidate, artwork) {
+                Ok(s) => {
+                    *retained_session = Some(candidate);
+                    Some(s)
+                }
+                Err(_) => {
+                    *retained_session = None;
+                    None
+                }
             },
-            Err(error) => MediaSnapshot {
-                volume,
-                muted,
-                error: Some(format!(
-                    "Não foi possível consultar a mídia do Windows: {error}"
-                )),
-                ..MediaSnapshot::default()
-            },
+            None => {
+                *retained_session = None;
+                None
+            }
+        };
+
+        MediaSnapshot {
+            session,
+            volume,
+            muted,
+            ..MediaSnapshot::default()
         }
     }
 
@@ -619,15 +655,29 @@ mod platform {
             }
             return Ok(());
         }
-        let session = select_session(manager)
-            .map_err(|error| format!("Não foi possível localizar a sessão: {error}"))?
-            .ok_or("Nenhuma música está disponível para controlar.")?;
-        let id = session_id(&session).map_err(|error| error.to_string())?;
-        if request.session_id.as_deref() != Some(&id) {
-            return Err(
-                "A sessão de música mudou. Aguarde a atualização e tente novamente.".into(),
-            );
-        }
+
+        let target_session = if let Some(target_id) = request.session_id.as_deref() {
+            let mut found = None;
+            if let Ok(sessions) = manager.GetSessions() {
+                if let Ok(count) = sessions.Size() {
+                    for i in 0..count {
+                        if let Ok(s) = sessions.GetAt(i) {
+                            if let Ok(id) = session_id(&s) {
+                                if id == target_id {
+                                    found = Some(s);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            found.or_else(|| select_session(manager))
+        } else {
+            select_session(manager)
+        };
+
+        let session = target_session.ok_or("Nenhuma música está disponível para controlar.")?;
         let controls = session
             .GetPlaybackInfo()
             .and_then(|info| info.Controls())
@@ -700,6 +750,11 @@ mod platform {
                             },
                         );
                     }
+                }
+            }
+            if let Some(manager_ref) = &manager {
+                if manager_ref.GetSessions().is_err() {
+                    manager = None;
                 }
             }
             if let Some(manager) = &manager {

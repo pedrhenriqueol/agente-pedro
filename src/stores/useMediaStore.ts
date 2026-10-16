@@ -4,7 +4,7 @@ import { EMPTY_MEDIA, readMedia, sendMediaControl, watchMedia, type MediaAction,
 export type MediaPresentationPhase = 'loading' | 'ready' | 'updating' | 'empty' | 'unavailable';
 // The Windows worker samples sessions about every 900 ms. One missed sample may
 // belong to a track change; this deadline also bounds a genuinely closed player.
-export const MEDIA_PRESENTATION_GRACE_MS = 1150;
+export const MEDIA_PRESENTATION_GRACE_MS = 2500;
 
 interface MediaStore {
   snapshot: MediaSnapshot;
@@ -36,7 +36,8 @@ function receive(snapshot: MediaSnapshot): boolean {
     || snapshot.revision === current.snapshot.revision && snapshot.sequence < current.snapshot.sequence)) return false;
   const base = { snapshot, initialized: true, observedAt: Date.now(), ...(readFailed ? { error: null } : {}) };
   readFailed = false;
-  if (snapshot.session) {
+  const hasContent = Boolean(snapshot.session && (snapshot.session.title.trim() || snapshot.session.artist.trim()));
+  if (hasContent && snapshot.session) {
     cancelPresentationTimer();
     useMediaStore.setState({ ...base, displaySession: snapshot.session, presentationPhase: 'ready' });
   } else if (!snapshot.supported || snapshot.error) {
