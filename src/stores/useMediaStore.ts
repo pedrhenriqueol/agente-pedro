@@ -16,6 +16,7 @@ interface MediaStore {
   error: string | null;
   controlMedia: (action: MediaAction, value?: number) => Promise<void>;
   refreshMedia: () => Promise<void>;
+  reconcileMedia: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -27,10 +28,24 @@ let readFailed = false;
 let observation = 0;
 let refreshSequence = 0;
 let settledRefresh = 0;
-let localFailure: { source: 'read' | 'transport' | 'volume'; revision: number } | null = null;
+type TransportContext = Pick<MediaSession, 'id' | 'title' | 'artist' | 'album' | 'playbackStatus'>;
+let localFailure: { source: 'read' | 'volume' | 'availability' } | { source: 'transport'; context: TransportContext | null } | null = null;
 
 const hasContent = (session: MediaSession | null): session is MediaSession =>
   Boolean(session && (session.title.trim() || session.artist.trim()));
+
+function transportContext(session: MediaSession | null): TransportContext | null {
+  if (!session) return null;
+  const { id, title, artist, album, playbackStatus } = session;
+  return { id, title, artist, album, playbackStatus };
+}
+
+function hasNewTransportContext(snapshot: MediaSnapshot, previous: TransportContext | null): boolean {
+  const session = snapshot.session;
+  return snapshot.supported && !snapshot.error && !snapshot.sessionUpdating && hasContent(session)
+    && (!previous || previous.id !== session.id || previous.title !== session.title || previous.artist !== session.artist
+      || previous.album !== session.album || previous.playbackStatus !== session.playbackStatus);
+}
 
 function cancelPresentationTimer(): void {
   if (presentationTimer !== null) clearTimeout(presentationTimer);
@@ -43,13 +58,21 @@ function receive(snapshot: MediaSnapshot): boolean {
     || snapshot.revision === current.snapshot.revision && snapshot.sequence < current.snapshot.sequence)) return false;
   observation += 1;
   const recovered = localFailure?.source === 'read'
-    || localFailure?.source === 'transport' && snapshot.revision > localFailure.revision;
+    || localFailure?.source === 'availability' && snapshot.supported && !snapshot.error && !snapshot.sessionUpdating && hasContent(snapshot.session)
+    || localFailure?.source === 'transport' && hasNewTransportContext(snapshot, localFailure.context);
   if (recovered) localFailure = null;
   const base = { snapshot, initialized: true, observedAt: Date.now(), ...(recovered ? { error: null } : {}) };
   readFailed = false;
   if (!snapshot.supported || snapshot.error) {
     cancelPresentationTimer();
     useMediaStore.setState({ ...base, displaySession: null, presentationPhase: 'unavailable' });
+  } else if (snapshot.sessionUpdating) {
+    // Native recovery owns a finite deadline and still knows a live session.
+    // A WebView timer must not turn that pending work into an empty catalog.
+    cancelPresentationTimer();
+    const context = hasContent(snapshot.session) ? snapshot.session : current.displaySession;
+    useMediaStore.setState({ ...base, displaySession: context,
+      presentationPhase: context ? 'updating' : 'loading' });
   } else if (hasContent(snapshot.session)) {
     cancelPresentationTimer();
     useMediaStore.setState({ ...base, displaySession: snapshot.session, presentationPhase: 'ready' });
@@ -73,14 +96,14 @@ function receive(snapshot: MediaSnapshot): boolean {
 
 function receivePosition(position: MediaPosition): void {
   const { snapshot } = useMediaStore.getState();
-  if (!snapshot.supported || snapshot.error || !hasContent(snapshot.session)
+  if (!snapshot.supported || snapshot.error || snapshot.sessionUpdating || !hasContent(snapshot.session)
     || snapshot.revision !== position.revision || position.sequence < snapshot.sequence || snapshot.session.id !== position.sessionId) return;
   observation += 1;
   const session = { ...snapshot.session, positionSeconds: position.positionSeconds, durationSeconds: position.durationSeconds };
   // The worker may emit only position ticks while a healthy track stays the
   // same. They recover an IPC read failure, never a native or transport error.
   const recoverRead = readFailed;
-  const clearReadError = recoverRead && localFailure?.source === 'read';
+  const clearReadError = recoverRead && (localFailure?.source === 'read' || localFailure?.source === 'availability');
   if (clearReadError) localFailure = null;
   readFailed = false;
   useMediaStore.setState({ snapshot: { ...snapshot, sequence: position.sequence, session },
@@ -91,46 +114,58 @@ function receivePosition(position: MediaPosition): void {
 let controlQueue = Promise.resolve();
 let queuedControls = 0;
 
+async function refreshSnapshot(explicit: boolean): Promise<void> {
+  const request = ++refreshSequence;
+  const startedAt = observation;
+  try {
+    if (consumers > 0) await ensureConnection();
+    const snapshot = await readMedia();
+    if (request < settledRefresh) return;
+    settledRefresh = request;
+    if (receive(snapshot) && explicit) { localFailure = null; useMediaStore.setState({ error: null }); }
+  }
+  catch (error) {
+    // Automatic wake reconciliation is a cache read, not an explicit retry.
+    // Its failure must not supersede an explicit retry still in flight, hide a
+    // healthy player or erase a volume failure: no new state was observed.
+    if (!explicit) throw error;
+    const superseded = request < settledRefresh || startedAt !== observation;
+    settledRefresh = Math.max(settledRefresh, request);
+    if (superseded) throw error;
+    cancelPresentationTimer();
+    readFailed = true;
+    const snapshot = useMediaStore.getState().snapshot;
+    localFailure = { source: 'read' };
+    useMediaStore.setState({ initialized: true, displaySession: snapshot.supported && !snapshot.error && hasContent(snapshot.session) ? snapshot.session : null,
+      presentationPhase: 'unavailable', error: errorMessage(error) });
+    throw error;
+  }
+}
+
 export const useMediaStore = create<MediaStore>((set, get) => ({
   snapshot: { ...EMPTY_MEDIA }, displaySession: null, presentationPhase: 'loading',
   initialized: false, observedAt: Date.now(), pending: false, error: null,
   clearError: () => { localFailure = null; set({ error: null }); },
-  refreshMedia: async () => {
-    const request = ++refreshSequence;
-    const startedAt = observation;
-    try {
-      if (consumers > 0) await ensureConnection();
-      const snapshot = await readMedia();
-      if (request < settledRefresh) return;
-      settledRefresh = request;
-      if (receive(snapshot)) { localFailure = null; set({ error: null }); }
-    }
-    catch (error) {
-      const superseded = request < settledRefresh || startedAt !== observation;
-      settledRefresh = Math.max(settledRefresh, request);
-      if (superseded) throw error;
-      cancelPresentationTimer();
-      readFailed = true;
-      const snapshot = get().snapshot;
-      localFailure = { source: 'read', revision: snapshot.revision };
-      set({ initialized: true, displaySession: snapshot.supported && !snapshot.error && hasContent(snapshot.session) ? snapshot.session : null,
-        presentationPhase: 'unavailable', error: errorMessage(error) });
-      throw error;
-    }
-  },
+  refreshMedia: () => refreshSnapshot(true),
+  reconcileMedia: () => refreshSnapshot(false),
   controlMedia: async (action, value) => {
     if (get().pending && action !== 'volume') return;
     const { snapshot } = get();
-    let targetRevision = snapshot.revision;
+    let targetContext = transportContext(snapshot.session);
     const recordFailure = (message: string) => {
-      localFailure = { source: action === 'volume' ? 'volume' : 'transport', revision: targetRevision };
+      localFailure = action === 'volume' ? { source: 'volume' } : { source: 'transport', context: targetContext };
       set({ error: message });
     };
-    const refuse = (message: string): never => { recordFailure(message); throw new Error(message); };
-    if (!snapshot.supported) refuse('Os controles de música estão disponíveis no aplicativo para Windows.');
+    const refuse = (message: string, unavailable = false): never => {
+      if (unavailable) { localFailure = { source: 'availability' }; set({ error: message }); }
+      else recordFailure(message);
+      throw new Error(message);
+    };
+    if (!snapshot.supported) refuse('Os controles de música estão disponíveis no aplicativo para Windows.', true);
     const session = snapshot.session;
-    if (action !== 'volume' && !hasContent(session)) refuse('Nenhuma reprodução foi encontrada. Dê play no seu navegador.');
-    if (action !== 'volume' && get().presentationPhase === 'unavailable') refuse('Atualize a reprodução antes de usar os controles.');
+    if (action !== 'volume' && !hasContent(session)) refuse('Nenhuma reprodução foi encontrada. Dê play no seu navegador.', true);
+    if (action !== 'volume' && get().presentationPhase === 'unavailable') refuse('Atualize a reprodução antes de usar os controles.', true);
+    if (action !== 'volume' && snapshot.sessionUpdating) refuse('A reprodução está atualizando. Aguarde um instante.', true);
     const capabilities = { play: session?.canPlay, pause: session?.canPause,
       next: session?.canGoNext, previous: session?.canGoPrevious };
     if (action !== 'volume' && !capabilities[action]) refuse('Esse controle não está disponível na reprodução atual.');
@@ -147,15 +182,15 @@ export const useMediaStore = create<MediaStore>((set, get) => ({
         || get().presentationPhase !== 'ready')) {
         throw new Error('A reprodução mudou. Tente o controle novamente.');
       }
-      targetRevision = get().snapshot.revision;
+      targetContext = transportContext(get().snapshot.session);
       receive(await sendMediaControl(action, action === 'volume' ? null : session?.id ?? null, value));
     });
     controlQueue = command;
     try { await command; }
     catch (error) {
-      // A late rejection belongs to the old transport context. A new semantic
-      // snapshot already reconciled discovery; never retry a skip implicitly.
-      if (action === 'volume' || get().snapshot.revision <= targetRevision) recordFailure(errorMessage(error));
+      // Only a different confirmed track/playback context makes an old refusal
+      // obsolete. Pending metadata, volume or artwork updates prove no success.
+      if (action === 'volume' || !hasNewTransportContext(get().snapshot, targetContext)) recordFailure(errorMessage(error));
       throw error;
     }
     finally { queuedControls -= 1; set({ pending: queuedControls > 0 }); }

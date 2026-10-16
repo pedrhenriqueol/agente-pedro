@@ -674,3 +674,161 @@ test('Rejeição atrasada de transporte não acrescenta erro à faixa que já se
     assert.equal(env.calls.filter(call => call.command === 'media_control').length, 1);
   } finally { close(); }
 });
+
+test('Seek para frente, trás e zero e timeline ausente não removem uma faixa com identidade válida', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    for (const [index, positionSeconds] of [90, 10, 0, null].entries()) {
+      env.emit('pedro:media-position', { revision: 1, sequence: index + 2, sessionId: 'soundcloud-tab', positionSeconds,
+        durationSeconds: positionSeconds === null ? null : 180 });
+      const state = env.useMediaStore.getState();
+      assert.equal(state.presentationPhase, 'ready');
+      assert.equal(state.displaySession.title, 'Faixa atual');
+      assert.equal(state.displaySession.positionSeconds, positionSeconds);
+      assert.equal(env.timers.size, 0);
+    }
+    assert.equal(env.calls.length, 1, 'Seek observado não dispara leitura nem comando do frontend');
+  } finally { close(); }
+});
+
+test('Busca nativa inicial permanece carregando além da carência sem inventar faixa', async () => {
+  const env = environment({ initial: snapshot({ session: null, sessionUpdating: true }) });
+  const close = await env.initializeMedia();
+  try {
+    assert.equal(env.useMediaStore.getState().initialized, true);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'loading');
+    env.clock.advance(env.MEDIA_PRESENTATION_GRACE_MS * 3);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'loading');
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+    assert.equal(env.timers.size, 0, 'O prazo da operação nativa pertence ao backend');
+    env.emit('pedro:media', snapshot({ revision: 2, sessionUpdating: false, session: { title: 'Leitura concluída' } }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Leitura concluída');
+  } finally { close(); }
+});
+
+test('Contexto nativo em atualização conserva identidade sem controles nem promoção por ticks', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.emit('pedro:media', snapshot({ revision: 2, sessionUpdating: true }));
+    const context = plain(env.useMediaStore.getState().displaySession);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'updating');
+    await assert.rejects(env.useMediaStore.getState().controlMedia('next'), /atualizando/);
+    env.emit('pedro:media-position', { revision: 2, sequence: 3, sessionId: 'soundcloud-tab', positionSeconds: 90, durationSeconds: 180 });
+    env.clock.advance(env.MEDIA_PRESENTATION_GRACE_MS * 3);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'updating');
+    assert.deepEqual(plain(env.useMediaStore.getState().displaySession), context);
+    assert.equal(env.timers.size, 0);
+    assert.equal(env.calls.filter(call => call.command === 'media_control').length, 0);
+    env.emit('pedro:media', snapshot({ revision: 3, sequence: 4, sessionUpdating: false, session: { title: 'Faixa recuperada', positionSeconds: 91 } }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Faixa recuperada');
+    assert.equal(env.useMediaStore.getState().error, null);
+  } finally { close(); }
+});
+
+test('Busca nativa com contexto suspende carência anterior e fechamento real começa um novo prazo', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.emit('pedro:media', snapshot({ revision: 2, session: null }));
+    env.clock.advance(900);
+    env.emit('pedro:media', snapshot({ revision: 3, session: null, sessionUpdating: true }));
+    env.clock.advance(env.MEDIA_PRESENTATION_GRACE_MS * 3);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'updating');
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Faixa atual');
+    assert.equal(env.timers.size, 0);
+    env.emit('pedro:media', snapshot({ revision: 4, session: null, sessionUpdating: false }));
+    env.clock.advance(env.MEDIA_PRESENTATION_GRACE_MS - 1);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'updating');
+    env.clock.advance(1);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'empty');
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+  } finally { close(); }
+});
+
+test('Falha nativa tem prioridade sobre o sinal de busca e atualização', async () => {
+  for (const session of [null, {}]) {
+    const env = environment({ initial: snapshot({ session, sessionUpdating: true, error: 'Serviço indisponível' }) });
+    const close = await env.initializeMedia();
+    try {
+      assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+      assert.equal(env.useMediaStore.getState().displaySession, null);
+      assert.equal(env.timers.size, 0);
+    } finally { close(); }
+  }
+});
+
+test('Reconciliação de cache recupera a faixa sem limpar erro de volume ou enviar transporte', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.handleInvoke(async () => { throw new Error('Falha legítima de volume'); });
+    await assert.rejects(env.useMediaStore.getState().controlMedia('volume', 60), /volume/);
+    env.handleInvoke(async command => {
+      assert.equal(command, 'media_snapshot');
+      return snapshot({ revision: 2, session: { title: 'Faixa reencontrada' } });
+    });
+    await env.useMediaStore.getState().reconcileMedia();
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Faixa reencontrada');
+    assert.match(env.useMediaStore.getState().error, /volume/);
+    assert.equal(env.calls.filter(call => call.command === 'media_control').length, 1);
+    env.handleInvoke(async () => { throw new Error('Falha de leitura ao recuperar foco'); });
+    await assert.rejects(env.useMediaStore.getState().reconcileMedia(), /recuperar foco/);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.match(env.useMediaStore.getState().error, /volume/);
+  } finally { close(); }
+});
+
+test('Falha quieta posterior não descarta a recuperação de uma tentativa explícita em andamento', async () => {
+  const env = environment(); const close = await env.initializeMedia(); const recovery = deferred();
+  try {
+    env.handleInvoke(async () => { throw new Error('Leitura inicial indisponível'); });
+    await assert.rejects(env.useMediaStore.getState().refreshMedia(), /inicial indisponível/);
+    env.handleInvoke(() => recovery.promise);
+    const retry = env.useMediaStore.getState().refreshMedia();
+    await settle();
+    env.handleInvoke(async () => { throw new Error('Wake não conseguiu ler o cache'); });
+    await assert.rejects(env.useMediaStore.getState().reconcileMedia(), /Wake/);
+    recovery.resolve(snapshot({ revision: 2, session: { title: 'Reprodução recuperada' } }));
+    await retry;
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Reprodução recuperada');
+    assert.equal(env.useMediaStore.getState().error, null);
+  } finally { close(); }
+});
+
+test('Atualização nativa após skip não oculta uma recusa nem trata a mesma faixa recuperada como sucesso', async () => {
+  const env = environment(); const close = await env.initializeMedia(); const response = deferred();
+  try {
+    env.handleInvoke(() => response.promise);
+    const skip = env.useMediaStore.getState().controlMedia('next');
+    await settle();
+    env.emit('pedro:media', snapshot({ revision: 2, sessionUpdating: true }));
+    response.reject(new Error('O player recusou o comando de música'));
+    await assert.rejects(skip, /recusou/);
+    assert.match(env.useMediaStore.getState().error, /recusou/);
+    env.emit('pedro:media', snapshot({ revision: 3, sessionUpdating: false }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.match(env.useMediaStore.getState().error, /recusou/, 'Reler os mesmos metadados não confirma o skip');
+    env.emit('pedro:media', snapshot({ revision: 4, session: { title: 'Outra faixa confirmada' } }));
+    assert.equal(env.useMediaStore.getState().error, null);
+    assert.equal(env.calls.filter(call => call.command === 'media_control').length, 1);
+  } finally { close(); }
+});
+
+test('Mudanças de volume, capa ou sinal de atualização não apagam uma recusa de transporte', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.handleInvoke(async () => { throw new Error('Pausa recusada pelo player'); });
+    await assert.rejects(env.useMediaStore.getState().controlMedia('pause'), /recusada/);
+    for (const update of [
+      snapshot({ revision: 2, volume: 70 }),
+      snapshot({ revision: 3, sessionUpdating: true }),
+      snapshot({ revision: 4, session: { artwork: 'data:image/png;base64,bmV3' } }),
+    ]) {
+      env.emit('pedro:media', update);
+      assert.match(env.useMediaStore.getState().error, /recusada/);
+    }
+    env.emit('pedro:media', snapshot({ revision: 5, session: { playbackStatus: 'paused' } }));
+    assert.equal(env.useMediaStore.getState().error, null, 'Um novo estado de reprodução confirmado torna o contexto anterior obsoleto');
+  } finally { close(); }
+});

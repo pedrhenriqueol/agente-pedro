@@ -22,6 +22,8 @@ export interface MediaSnapshot {
   sequence: number;
   supported: boolean;
   session: MediaSession | null;
+  /** Missing on older backends. Native discovery/metadata recovery is pending. */
+  sessionUpdating?: boolean;
   volume: number | null;
   muted: boolean | null;
   error: string | null;
@@ -35,7 +37,7 @@ export interface MediaPosition {
 }
 
 export const EMPTY_MEDIA: MediaSnapshot = {
-  revision: 0, sequence: 0, supported: false, session: null, volume: null, muted: null, error: null,
+  revision: 0, sequence: 0, supported: false, session: null, sessionUpdating: false, volume: null, muted: null, error: null,
 };
 
 export async function readMedia(): Promise<MediaSnapshot> {

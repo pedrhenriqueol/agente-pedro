@@ -21,6 +21,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-sql",
  "windows",
+ "windows-future",
 ]
 
 [[package]]

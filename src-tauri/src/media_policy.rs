@@ -83,18 +83,6 @@ impl ReadBudget {
         now < self.deadline
     }
 
-    pub fn candidate_deadline(&self, now: Instant, remaining_candidates: usize) -> Option<Instant> {
-        // Leave room to try other tabs, but do not permanently exclude a lone
-        // legitimate provider that needs the original two-second native limit.
-        let limit = if remaining_candidates <= 1 {
-            2_000
-        } else {
-            700
-        };
-        self.has_time(now)
-            .then(|| self.deadline.min(now + Duration::from_millis(limit)))
-    }
-
     pub fn artwork_deadline(&self, now: Instant) -> Option<Instant> {
         (now < self.deadline).then(|| self.deadline.min(now + Duration::from_millis(300)))
     }
@@ -199,18 +187,12 @@ mod tests {
     }
 
     #[test]
-    fn candidate_and_artwork_deadlines_share_one_absolute_budget() {
+    fn discovery_and_artwork_share_one_absolute_budget() {
         let start = Instant::now();
         let budget = ReadBudget::new(start);
-        assert_eq!(
-            budget.candidate_deadline(start, 2),
-            Some(start + Duration::from_millis(700))
-        );
+        assert!(budget.has_time(start));
         let late = start + Duration::from_millis(2_400);
-        assert_eq!(
-            budget.candidate_deadline(late, 2),
-            Some(start + Duration::from_millis(2_500))
-        );
+        assert!(budget.has_time(late));
         assert_eq!(
             budget.artwork_deadline(start),
             Some(start + Duration::from_millis(300))
@@ -219,21 +201,10 @@ mod tests {
             budget.artwork_deadline(late),
             Some(start + Duration::from_millis(2_500))
         );
-        assert_eq!(
-            budget.candidate_deadline(start + Duration::from_millis(2_500), 2),
-            None
-        );
+        assert!(!budget.has_time(start + Duration::from_millis(2_500)));
         assert_eq!(
             budget.artwork_deadline(start + Duration::from_secs(3)),
             None
-        );
-        assert_eq!(
-            budget.candidate_deadline(start, 1),
-            Some(start + Duration::from_secs(2))
-        );
-        assert_eq!(
-            budget.candidate_deadline(late, 1),
-            Some(start + Duration::from_millis(2_500))
         );
     }
 

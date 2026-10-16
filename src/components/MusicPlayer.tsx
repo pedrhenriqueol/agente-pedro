@@ -151,6 +151,7 @@ export function MusicPlayer({ compact = false, showVolume = true, showIdentity =
   })));
   const [clock, setClock] = useState(() => Date.now());
   const session = displaySession;
+  const loading = !initialized || presentationPhase === 'loading';
   const updating = presentationPhase === 'updating';
   const ready = presentationPhase === 'ready' && snapshot.session?.id === session?.id;
   const failure = error || snapshot.error;
@@ -207,7 +208,7 @@ export function MusicPlayer({ compact = false, showVolume = true, showIdentity =
     {error && !snapshot.error && <button type="button" className="music-error-action" onClick={clearError} aria-label="Fechar mensagem de erro" title="Fechar mensagem"><X size={13} aria-hidden="true" /></button>}
   </div>;
 
-  if (island) return <div className={`music-player is-island${updating ? ' is-updating' : ''}`} role="group" aria-label="Player de música" aria-busy={pending || updating} data-presentation={presentationPhase}>
+  if (island) return <div className={`music-player is-island${updating ? ' is-updating' : ''}`} role="group" aria-label="Player de música" aria-busy={pending || updating || loading} data-presentation={presentationPhase}>
     {session ? <div className="music-island-row">
       <div className="music-island-track">
         <TrackIdentity session={session} compact layout="island">{timeline}</TrackIdentity>
@@ -219,19 +220,19 @@ export function MusicPlayer({ compact = false, showVolume = true, showIdentity =
       <span className="music-island-state" role="status">{status}</span>
     </div> : <div className="music-island-empty-row">
       <div className="music-player-empty" role="status">
-        <div className="music-empty-mark">{!initialized ? <LoaderCircle size={23} className="music-loading-icon" aria-hidden="true" /> : <Music2 size={23} strokeWidth={1.4} aria-hidden="true" />}</div>
-        <div><h2>{!initialized ? 'Buscando sua música…' : failure ? 'Reprodução indisponível' : !snapshot.supported ? 'Sua música, no Windows' : 'Nada tocando'}</h2>
-          <p>{!initialized ? 'Preparando os controles de reprodução.' : failure ? 'Atualize a reprodução para tentar novamente.' : !snapshot.supported
+        <div className="music-empty-mark">{loading ? <LoaderCircle size={23} className="music-loading-icon" aria-hidden="true" /> : <Music2 size={23} strokeWidth={1.4} aria-hidden="true" />}</div>
+        <div><h2>{loading ? 'Buscando sua música…' : failure ? 'Reprodução indisponível' : !snapshot.supported ? 'Sua música, no Windows' : 'Nada tocando'}</h2>
+          <p>{loading ? 'Preparando os controles de reprodução.' : failure ? 'Atualize a reprodução para tentar novamente.' : !snapshot.supported
             ? 'Os controles ficam disponíveis no aplicativo para Windows.' : 'Dê play no SoundCloud, no navegador ou em outro aplicativo.'}</p>
         </div>
       </div>
       {volume && <div className="music-island-controls is-volume-only">{volume}</div>}
-      {!volume && initialized && snapshot.supported && !failure && <button className="music-island-refresh" type="button" disabled={pending} onClick={retry} aria-label="Buscar reprodução" title="Buscar reprodução"><RefreshCw size={15} aria-hidden="true" /></button>}
+      {!volume && !loading && initialized && snapshot.supported && !failure && <button className="music-island-refresh" type="button" disabled={pending} onClick={retry} aria-label="Buscar reprodução" title="Buscar reprodução"><RefreshCw size={15} aria-hidden="true" /></button>}
     </div>}
     {errorNotice}
   </div>;
 
-  return <div className={`music-player${compact ? ' is-compact' : ''}${updating ? ' is-updating' : ''}`} role="group" aria-label="Player de música" aria-busy={pending || updating} data-presentation={presentationPhase}>
+  return <div className={`music-player${compact ? ' is-compact' : ''}${updating ? ' is-updating' : ''}`} role="group" aria-label="Player de música" aria-busy={pending || updating || loading} data-presentation={presentationPhase}>
     {session ? <>
       {!compact && <div className="music-player-topline"><span className="eyebrow">Sua trilha do dia</span>
         <span className={`music-status${playing ? ' is-playing' : ''}`}><span />{status}</span></div>}
@@ -242,12 +243,12 @@ export function MusicPlayer({ compact = false, showVolume = true, showIdentity =
       {transport}
       {timeline}
     </> : <div className="music-player-empty" role="status">
-      <div className="music-empty-mark">{!initialized ? <LoaderCircle size={compact ? 23 : 34} className="music-loading-icon" aria-hidden="true" /> : <Music2 size={compact ? 23 : 34} strokeWidth={1.4} aria-hidden="true" />}</div>
-      <div><h2>{!initialized ? 'Buscando sua música…' : failure ? 'A música está indisponível' : !snapshot.supported ? 'Sua música, no Windows' : 'Sua próxima trilha começa aqui'}</h2>
-        <p>{!initialized ? 'Preparando os controles de reprodução.' : failure ? 'Tente atualizar a reprodução para continuar.' : !snapshot.supported
+      <div className="music-empty-mark">{loading ? <LoaderCircle size={compact ? 23 : 34} className="music-loading-icon" aria-hidden="true" /> : <Music2 size={compact ? 23 : 34} strokeWidth={1.4} aria-hidden="true" />}</div>
+      <div><h2>{loading ? 'Buscando sua música…' : failure ? 'A música está indisponível' : !snapshot.supported ? 'Sua música, no Windows' : 'Sua próxima trilha começa aqui'}</h2>
+        <p>{loading ? 'Preparando os controles de reprodução.' : failure ? 'Tente atualizar a reprodução para continuar.' : !snapshot.supported
           ? compact ? 'Abra o aplicativo para Windows.' : 'Use o aplicativo para Windows para acompanhar o SoundCloud e controlar a reprodução. Nesta prévia do navegador, os controles ficam indisponíveis.'
           : compact ? 'Abra o SoundCloud e dê play.' : 'Abra o SoundCloud no navegador e dê play. A música reconhecida pelo Windows aparece aqui e na ilha.'}</p>
-        {!compact && initialized && snapshot.supported && <button className="button ghost small music-refresh" type="button" disabled={pending} onClick={retry}><RefreshCw size={14} aria-hidden="true" />Buscar reprodução</button>}
+        {!compact && !loading && initialized && snapshot.supported && <button className="button ghost small music-refresh" type="button" disabled={pending} onClick={retry}><RefreshCw size={14} aria-hidden="true" />Buscar reprodução</button>}
       </div>
     </div>}
     {volume}

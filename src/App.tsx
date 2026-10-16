@@ -13,6 +13,7 @@ import { initializeStateBridge } from './services/stateBridge';
 import { initializePreferencesSync, usePreferencesStore } from './stores/usePreferencesStore';
 import { requestPage, setDockVisible } from './lib/desktop';
 import { initializeMedia } from './stores/useMediaStore';
+import { initializeMainMediaReconciliation } from './services/mainMediaReconciliation';
 import { initializeIslandVisibility, useIslandVisibilityStore } from './stores/useIslandVisibilityStore';
 import { applyPanelMaterial, configureDesktopMenu, initialDesktopPage, updateFocusProgress } from './services/nativeDesktop';
 import { useControlFeedback } from './hooks/useControlFeedback';
@@ -56,6 +57,10 @@ export default function App() {
     void detect().catch(() => { if (!cancelled) { setLabel('main'); setPhase('error'); } });
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    if (!label) return;
+    return initializeMainMediaReconciliation(label);
+  }, [label]);
   useEffect(() => {
     if (label !== 'main' || !('__TAURI_INTERNALS__' in window)) return;
     let cancelled = false; let cleanup: (() => void) | undefined;
