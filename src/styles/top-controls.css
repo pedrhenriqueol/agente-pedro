@@ -19,6 +19,12 @@
 .desktop-top-controls.is-right .desktop-top-notch { width: 74px; margin-left: auto; justify-content: space-evenly; }
 .desktop-top-notch > button { display: inline-flex; align-items: center; justify-content: center; height: 24px; min-width: 27px; padding: 3px 5px; border-radius: 7px; color: var(--widget-muted); transition: color 130ms ease, background 130ms ease; }
 .desktop-top-notch > button:hover:not(:disabled), .desktop-top-notch > button[aria-expanded='true'] { color: var(--widget-text); background: var(--widget-raised); }
+.desktop-top-chevron { display: grid; place-items: center; transform: rotate(0deg); transition: transform 180ms cubic-bezier(.16,1,.3,1); }
+.desktop-top-controls[data-popup-open='true'] .desktop-top-chevron { transform: rotate(180deg); }
+.desktop-top-sound-icon { display: grid; width: 14px; height: 14px; }
+.desktop-top-sound-layer { display: grid; grid-area: 1 / 1; place-items: center; transition: opacity 140ms ease, transform 160ms cubic-bezier(.16,1,.3,1); }
+.desktop-top-sound-layer.is-muted, .desktop-top-sound-icon[data-muted='true'] .desktop-top-sound-layer.is-audible { opacity: 0; transform: scale(.88); }
+.desktop-top-sound-layer.is-audible, .desktop-top-sound-icon[data-muted='true'] .desktop-top-sound-layer.is-muted { opacity: 1; transform: scale(1); }
 .desktop-top-notch > .desktop-top-tasks { gap: 3px; min-width: 41px; font-size: 10px; font-variant-numeric: tabular-nums; }
 .desktop-top-panel { width: 368px; margin-top: 6px; padding: 8px; background: var(--widget-surface); border: 1px solid var(--widget-line); border-radius: 18px; transition: height 180ms cubic-bezier(.16,1,.3,1); pointer-events: none; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--widget-line) transparent; }
 .desktop-top-controls.is-right .desktop-top-panel { width: 288px; margin-left: auto; transform-origin: top right; padding: 12px; }
@@ -39,4 +45,8 @@
 .desktop-top-sr-error { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 :root[data-reduced-motion='true'] .desktop-top-controls, :root[data-reduced-motion='true'] .desktop-top-panel { transition-duration: 0ms; }
 :root[data-reduced-motion='true'] .desktop-top-controls { transform: none; }
-@media (prefers-reduced-motion: reduce) { .desktop-top-controls, .desktop-top-panel { transition-duration: 0ms; } .desktop-top-controls { transform: none; } }
+.desktop-top-controls[data-reduce-motion='true'], .desktop-top-controls[data-reduce-motion='true'] .desktop-top-panel,
+.desktop-top-controls[data-reduce-motion='true'] .desktop-top-chevron, .desktop-top-controls[data-reduce-motion='true'] .desktop-top-sound-layer,
+:root[data-reduced-motion='true'] .desktop-top-chevron, :root[data-reduced-motion='true'] .desktop-top-sound-layer { transition-duration: 0ms; }
+.desktop-top-controls[data-reduce-motion='true'] { transform: none; }
+@media (prefers-reduced-motion: reduce) { .desktop-top-controls, .desktop-top-panel, .desktop-top-chevron, .desktop-top-sound-layer { transition-duration: 0ms; } .desktop-top-controls { transform: none; } }

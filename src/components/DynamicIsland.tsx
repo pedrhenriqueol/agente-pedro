@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { LayoutGroup, motion, useAnimationControls } from 'motion/react';
-import { ArrowUpRight, CalendarDays, ChevronDown, Coffee, House, ListTodo, Music2, Palette, Pause, Play, RefreshCw, RotateCcw, Settings2, Timer, Wallet } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, ChevronDown, House, ListTodo, Music2, Palette, Pause, Play, RefreshCw, RotateCcw, Settings2, Timer, Wallet } from 'lucide-react';
 import { useFocusStore } from '../stores/useFocusStore';
 import { useFinanceStore, formatCentsToBRL } from '../stores/useFinanceStore';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { requestPage, syncIslandSize, readIslandAvailableWidth, type DesktopPage } from '../lib/desktop';
 import { MusicPlayer } from './MusicPlayer';
 import { PedroMascot } from './PedroMascot';
+import { FocusModeSwitch } from './ui/FocusModeSwitch';
+import { MenuHighlight } from './ui/MenuHighlight';
 import { useMediaStore } from '../stores/useMediaStore';
 import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
 import { IslandToday } from './IslandToday';
@@ -19,6 +21,7 @@ import { MARKER_TRAVEL, MOTION_INSTANT, SURFACE_CHANGE, SURFACE_CLOSE, SURFACE_O
 import { waitForWidgetViewport } from '../lib/widgetViewport';
 import '../styles/desktop.css';
 import '../styles/island-surface.css';
+import '../styles/interaction-continuity.css';
 
 type IslandView = 'activity' | 'menu' | 'settings' | 'today';
 type IslandPhase = 'compact' | 'preparing' | 'expanding' | 'expanded' | 'switching' | 'collapsing';
@@ -58,6 +61,10 @@ export function DynamicIsland() {
   const width = useRef(96);
   const [bodyVisible, setBodyVisible] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
+  const [menuPointer, setMenuPointer] = useState<number | null>(null);
+  const [menuFocus, setMenuFocus] = useState<number | null>(null);
+  const [menuInput, setMenuInput] = useState<'pointer' | 'keyboard'>('pointer');
+  const menuSurface = useRef<HTMLDivElement>(null);
   const [systemReduceMotion, setSystemReduceMotion] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [currentTime, setCurrentTime] = useState(() => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
   const [error, setError] = useState('');
@@ -462,6 +469,8 @@ export function DynamicIsland() {
   function openMenu() {
     shouldFocusBody.current = true;
     setMenuIndex(0);
+    setMenuPointer(null); setMenuFocus(null);
+    setMenuInput(keyboardOwned.current ? 'keyboard' : 'pointer');
     if (requestedExpansion.current && view === 'menu') closeIsland(true);
     else if (requestedExpansion.current) switchView('menu');
     else beginOpen('menu');
@@ -622,6 +631,7 @@ export function DynamicIsland() {
   ];
 
   function menuKeys(event: KeyboardEvent<HTMLDivElement>) {
+    setMenuInput('keyboard'); setMenuPointer(null);
     let next = menuIndex;
     if (event.key === 'ArrowDown') next = (menuIndex + 1) % menu.length;
     else if (event.key === 'ArrowUp') next = (menuIndex - 1 + menu.length) % menu.length;
@@ -645,6 +655,7 @@ export function DynamicIsland() {
   const surfaceTransition = reduceMotion || resizingBlocked.current ? MOTION_INSTANT
     : phase === 'collapsing' ? SURFACE_CLOSE : phase === 'expanding' ? SURFACE_OPEN : SURFACE_CHANGE;
   const tabs = [{ id: 'today', label: 'Hoje', Icon: CalendarDays }, { id: 'focus', label: 'Foco', Icon: Timer }, { id: 'music', label: 'Música', Icon: Music2 }] as const;
+  const highlightedMenuItem = bodyVisible && available ? menuInput === 'pointer' ? menuPointer : menuFocus : null;
 
   useLayoutEffect(() => {
     const target = { width: surfaceWidth, height: surfaceHeight,
@@ -724,12 +735,20 @@ export function DynamicIsland() {
           <div hidden={view !== 'today'} inert={view !== 'today' || undefined} aria-hidden={view !== 'today' || undefined}>
             <IslandToday onOpenPanel={() => { void openPage('routine'); }} />
           </div>
-          {view === 'menu' ? <div id="island-menu" role="menu" aria-label="Menu do Pedro" className="island-menu" data-enter={bodyVisible} onKeyDown={menuKeys}>
-            {menu.map((item, index) => <button key={item.label} style={{ '--item-order': index } as CSSProperties} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem" tabIndex={menuIndex === index ? 0 : -1} onFocus={() => setMenuIndex(index)} onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index > 0 && index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
+          {view === 'menu' ? <div ref={menuSurface} id="island-menu" role="menu" aria-label="Menu do Pedro" className="island-menu" data-enter={bodyVisible} onKeyDown={menuKeys}
+            onPointerLeave={() => setMenuPointer(null)}
+            onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenuFocus(null); }}>
+            <MenuHighlight owner={menuSurface} active={highlightedMenuItem} reduceMotion={reduceMotion} />
+            {menu.map((item, index) => <button key={item.label} style={{ '--item-order': index } as CSSProperties} ref={element => { menuItems.current[index] = element; }} type="button" role="menuitem"
+              data-menu-index={index} data-highlighted={highlightedMenuItem === index || undefined} tabIndex={menuIndex === index ? 0 : -1}
+              onPointerEnter={() => { setMenuInput('pointer'); setMenuPointer(index); }}
+              onPointerMove={() => { setMenuInput('pointer'); setMenuPointer(index); }}
+              onFocus={event => { setMenuIndex(index); setMenuFocus(index); if (event.currentTarget.matches(':focus-visible')) setMenuInput('keyboard'); }}
+              onClick={item.run} className={`island-menu-item${index === 5 ? ' is-separated' : ''}`}><item.icon size={15} aria-hidden="true" /><span>{item.label}</span>{index > 0 && index < 5 ? <ArrowUpRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}</button>)}
           </div> : view === 'settings' ? <div className="island-appearance-popover"><IslandAppearance onOpenFull={() => { void openPage('appearance'); }} onClose={() => switchView(media || active || paused ? 'activity' : 'today')} /></div>
             : view === 'activity' ? activity === 'music' ? <div className="island-music-body"><MusicPlayer layout="island" /></div>
             : <div className="island-focus-block" aria-label={status}>
-            <div className="island-focus-top"><div className="island-mode-picker" role="group" aria-label="Tipo de sessão"><button type="button" aria-pressed={focus.currentMode === 'focus'} onClick={() => focus.setPomodoroMode('focus')} disabled={active || paused || recordPending}>Foco</button><button type="button" aria-pressed={focus.currentMode === 'break'} onClick={() => focus.setPomodoroMode('break')} disabled={active || paused || recordPending}><Coffee size={12} />Pausa</button></div><span className="island-clock">{currentTime}</span></div>
+            <div className="island-focus-top"><FocusModeSwitch compact mode={focus.currentMode} onChange={focus.setPomodoroMode} disabled={active || paused || recordPending} /><span className="island-clock">{currentTime}</span></div>
             <div className="island-timer-line"><div><span className="island-timer" role="timer" aria-label={`Tempo restante: ${formatTimer(focus.remainingSeconds)}`}>{formatTimer(focus.remainingSeconds)}</span><p className="island-task-name" title={selectedTask?.title}>{saveFailed ? 'Tente registrar novamente pelo botão ao lado.' : selectedTask?.title || (focus.currentMode === 'break' ? 'Respire. Você merece uma pausa.' : 'Escolha uma tarefa ou apenas comece.')}</p></div><div className="island-timer-actions"><button className="island-play-button" type="button" onClick={controlTimer} disabled={saving || (saveFailed && focus.isLoading)} aria-label={saveFailed ? 'Tentar registrar sessão novamente' : active ? 'Pausar sessão' : paused ? 'Continuar sessão' : 'Iniciar sessão'} title={saveFailed ? 'Tentar registrar novamente' : active ? 'Pausar' : paused ? 'Continuar' : 'Iniciar'}>{saveFailed ? <RefreshCw size={17} /> : active ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}</button><button className="widget-icon-button" type="button" onClick={focus.resetPomodoro} disabled={recordPending} aria-label="Reiniciar sessão" title="Reiniciar"><RotateCcw size={15} /></button></div></div>
             <div className="island-progress" role="progressbar" aria-label="Progresso da sessão" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><span style={{ transform: `scaleX(${progress})` }} /></div>
             <IslandTaskSelection />

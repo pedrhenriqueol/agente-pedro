@@ -1,0 +1,18 @@
+/* A single visual cursor, independent from the menu's stable hit rectangles. */
+.island-menu { position: relative; isolation: isolate; }
+.island-menu-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 8px;
+  background: var(--widget-raised);
+  border: 1px solid color-mix(in srgb, var(--widget-line) 72%, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+.island-menu > .island-menu-item { position: relative; z-index: 1; }
+.island-shell .island-menu .island-menu-item:hover,
+.island-shell .island-menu .island-menu-item:focus-visible { background: transparent; }
+.island-menu-item > svg { transition: color 140ms ease, opacity 140ms ease, transform var(--motion-control) var(--motion-ease-out); }
+.island-menu-item[data-highlighted='true'] > svg:first-child { color: var(--widget-accent); }
+.island-menu-item[data-highlighted='true'] > svg:last-child { opacity: 1; }

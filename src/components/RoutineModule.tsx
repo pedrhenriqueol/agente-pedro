@@ -1,9 +1,10 @@
 import { useId, useState, type FormEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Check, CheckCircle2, Circle, Flame, Pause, Play, Plus, RotateCcw, Target, Trash2 } from 'lucide-react';
-import { useFocusStore } from '../stores/useFocusStore';
+import { POMODORO_CONFIG, useFocusStore } from '../stores/useFocusStore';
 import { localDate } from '../database/date';
 import type { TaskPriority } from '../database/types';
+import { FocusModeSwitch } from './ui/FocusModeSwitch';
 import '../styles/routine.css';
 
 const priorities: Record<TaskPriority, string> = { high: 'Alta', med: 'Média', low: 'Baixa' };
@@ -57,14 +58,8 @@ export function FocusCard({ compact = false }: { compact?: boolean }) {
         </div>
         <Target size={21} className="focus-heading-icon" aria-hidden="true" />
       </header>
-      <div className="focus-mode-picker" aria-label="Duração da sessão">
-        <button type="button" aria-pressed={currentMode === 'focus'} disabled={started || recordPending} onClick={() => setPomodoroMode('focus')}>
-          Foco <span>25 min</span>
-        </button>
-        <button type="button" aria-pressed={currentMode === 'break'} disabled={started || recordPending} onClick={() => setPomodoroMode('break')}>
-          Pausa <span>5 min</span>
-        </button>
-      </div>
+      <FocusModeSwitch mode={currentMode} onChange={setPomodoroMode} disabled={started || recordPending}
+        durations={{ focus: POMODORO_CONFIG.DEFAULT_FOCUS_MINUTES, break: POMODORO_CONFIG.DEFAULT_BREAK_MINUTES }} />
       <div className={`focus-clock${currentMode === 'break' ? ' focus-clock--break' : ''}`}>
         <svg className="focus-clock-ring" viewBox="0 0 180 180" aria-hidden="true">
           <circle className="focus-ring-track" cx="90" cy="90" r="78" />

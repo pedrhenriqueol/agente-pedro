@@ -1,0 +1,24 @@
+/* Only the marker travels; controls retain their established dimensions. */
+.focus-mode-switch { position: relative; isolation: isolate; }
+.focus-mode-switch.focus-mode-picker > button,
+.focus-mode-switch.island-mode-picker > button { position: relative; z-index: 1; background: transparent; }
+.focus-mode-switch.focus-mode-picker > button[aria-pressed='true'],
+.focus-mode-switch.island-mode-picker > button[aria-pressed='true'] { background: transparent; }
+.focus-mode-selection {
+  position: absolute;
+  left: 0;
+  z-index: 0;
+  border-radius: 8px;
+  background: var(--raised);
+  pointer-events: none;
+  opacity: 0;
+}
+.focus-mode-selection[data-ready='true'] {
+  opacity: 1;
+  transition: transform 200ms cubic-bezier(.18,.8,.28,1), width 200ms cubic-bezier(.18,.8,.28,1);
+}
+.focus-mode-switch.is-compact .focus-mode-selection { border-radius: 6px; background: color-mix(in srgb, var(--widget-accent) 12%, transparent); }
+.focus-mode-switch[data-disabled='true'] .focus-mode-selection { opacity: .75; }
+:root[data-reduced-motion='true'] .focus-mode-selection,
+[data-reduce-motion='true'] .focus-mode-selection { transition: none; }
+@media (prefers-reduced-motion: reduce) { .focus-mode-selection { transition: none; } }

@@ -1,0 +1,185 @@
+{
+  "scenarios": 19,
+  "passed": 19,
+  "sampledFrames": 2230,
+  "openCloseCycles": 36,
+  "nativeLimit": "Native IPC, region clipping and DPI are simulated. No proof of Windows cross-application focus, click-through, or compositor behavior.",
+  "scope": "Real Chromium components and iframe viewport, native region/IPC simulated. DeviceScaleFactor is browser emulation; no Win32/WebView2 native proof.",
+  "results": [
+    {
+      "name": "island six open close reversals reducefalse",
+      "label": "island",
+      "pass": true,
+      "samples": 504,
+      "regionChanges": 24,
+      "cycles": 6
+    },
+    {
+      "name": "island six open close reversals reducetrue",
+      "label": "island",
+      "pass": true,
+      "samples": 108,
+      "regionChanges": 24,
+      "cycles": 6
+    },
+    {
+      "name": "top-left six open close reversals reducefalse",
+      "label": "top-left",
+      "pass": true,
+      "samples": 226,
+      "regionChanges": 12,
+      "cycles": 6
+    },
+    {
+      "name": "top-left six open close reversals reducetrue",
+      "label": "top-left",
+      "pass": true,
+      "samples": 73,
+      "regionChanges": 12,
+      "cycles": 6
+    },
+    {
+      "name": "top-right six open close reversals reducefalse",
+      "label": "top-right",
+      "pass": true,
+      "samples": 221,
+      "regionChanges": 12,
+      "cycles": 6
+    },
+    {
+      "name": "top-right six open close reversals reducetrue",
+      "label": "top-right",
+      "pass": true,
+      "samples": 82,
+      "regionChanges": 12,
+      "cycles": 6
+    },
+    {
+      "name": "island delayed region barrier and DPI1.5 clamp",
+      "label": "island",
+      "pass": true,
+      "samples": 126,
+      "regionChanges": 5,
+      "cssScale": 1.5,
+      "simulatedNativeClamp": true
+    },
+    {
+      "name": "top-left delayed region barrier and DPI1.5 clamp",
+      "label": "top-left",
+      "pass": true,
+      "samples": 96,
+      "regionChanges": 3,
+      "cssScale": 1.5,
+      "simulatedNativeClamp": true
+    },
+    {
+      "name": "top-right delayed region barrier and DPI1.5 clamp",
+      "label": "top-right",
+      "pass": true,
+      "samples": 95,
+      "regionChanges": 3,
+      "cssScale": 1.5,
+      "simulatedNativeClamp": true
+    },
+    {
+      "name": "island reduced toggled midflight",
+      "label": "island",
+      "pass": true,
+      "samples": 27,
+      "regionChanges": 4,
+      "settledAfterReduce": true
+    },
+    {
+      "name": "top-left reduced toggled midflight",
+      "label": "top-left",
+      "pass": true,
+      "samples": 22,
+      "regionChanges": 2,
+      "settledAfterReduce": true
+    },
+    {
+      "name": "top-right reduced toggled midflight",
+      "label": "top-right",
+      "pass": true,
+      "samples": 20,
+      "regionChanges": 2,
+      "settledAfterReduce": true
+    },
+    {
+      "name": "top-left stagger follows prepared surface with rapid reversal",
+      "label": "top-left",
+      "pass": true,
+      "samples": 72,
+      "regionChanges": 4,
+      "stagger": true,
+      "reversals": 4
+    },
+    {
+      "name": "top-right stagger follows prepared surface with rapid reversal",
+      "label": "top-right",
+      "pass": true,
+      "samples": 73,
+      "regionChanges": 4,
+      "stagger": true,
+      "reversals": 4
+    },
+    {
+      "name": "right volume icon layers persist through mute restore",
+      "label": "top-right",
+      "pass": true,
+      "samples": 48,
+      "regionChanges": 2,
+      "persistentSoundLayers": 2
+    },
+    {
+      "name": "central context tabs keyboard selection remains aligned",
+      "label": "island",
+      "pass": true,
+      "samples": 79,
+      "regionChanges": 4,
+      "keyboardSelection": true
+    },
+    {
+      "name": "contextual menu one highlight pointer keyboard reduced reversal",
+      "label": "island",
+      "pass": true,
+      "samples": 227,
+      "regionChanges": 4,
+      "pointerTargets": 6,
+      "rapidReversals": 4,
+      "singlePersistentHighlight": true
+    },
+    {
+      "name": "central focus marker survives rapid changes and disable",
+      "label": "island",
+      "pass": true,
+      "samples": 131,
+      "regionChanges": 6,
+      "modeToggles": 6,
+      "persistentMarker": true,
+      "disabledDuringRunAndPause": true
+    },
+    {
+      "name": "main focus selection survives Home Routine hidden page",
+      "pass": true
+    }
+  ],
+  "popupGeometry": {
+    "left": {
+      "contentOffsetHeight": 337,
+      "clientWidth": 350
+    },
+    "right": {
+      "contentOffsetHeight": 98,
+      "clientWidth": 262
+    },
+    "overflowSampleCount": 0,
+    "sampleCount": 134,
+    "clampedClientWidths": [
+      286,
+      228
+    ],
+    "nativeRegionDelayMs": 140,
+    "deviceScaleFactor": 1.5
+  }
+}

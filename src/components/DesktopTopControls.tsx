@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { animate, motion, useMotionValue } from 'motion/react';
 import { isTauri } from '@tauri-apps/api/core';
-import { ChevronDown, ChevronUp, CircleAlert, LayoutGrid, ListTodo, Palette, RefreshCw, Volume2, VolumeX, X } from 'lucide-react';
+import { ChevronDown, CircleAlert, LayoutGrid, ListTodo, Palette, RefreshCw, Volume2, VolumeX, X } from 'lucide-react';
 import { usePreferencesStore } from '../stores/usePreferencesStore';
 import { useIslandVisibilityStore } from '../stores/useIslandVisibilityStore';
 import { useFocusStore } from '../stores/useFocusStore';
 import { useMediaStore } from '../stores/useMediaStore';
 import { configureTopControl, type TopControlFrame, type TopControlLabel } from '../services/topControls';
 import { requestPage, type DesktopPage } from '../lib/desktop';
-import { POPOVER_ENTER, POPOVER_EXIT } from '../lib/motionProfiles';
+import { CONTENT_ENTER, CONTENT_EXIT, POPOVER_ENTER, POPOVER_EXIT } from '../lib/motionProfiles';
 import { waitForWidgetViewport } from '../lib/widgetViewport';
 import { IslandAppearance } from './IslandAppearance';
 import { MusicVolume } from './MusicPlayer';
@@ -41,6 +41,8 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
   const popupOpacity = useMotionValue(0);
   const popupY = useMotionValue(-7);
   const popupScale = useMotionValue(.985);
+  const contentOpacity = useMotionValue(0);
+  const contentY = useMotionValue(4);
   const lastPopupGoal = useRef<boolean | null>(null);
   const [nativeVisible, setNativeVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,25 +72,37 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
       lastPopupGoal.current = null;
       popupOpacity.stop(); popupY.stop(); popupScale.stop();
       popupOpacity.set(0);
+      contentOpacity.stop(); contentY.stop();
+      contentOpacity.set(0); contentY.set(4);
       return;
     }
+    const preparing = lastPopupGoal.current === null && !popupVisible;
     const changed = lastPopupGoal.current !== popupVisible;
     lastPopupGoal.current = popupVisible;
     const target = { opacity: popupVisible ? 1 : 0, y: popupVisible || reduced ? 0 : -7, scale: popupVisible || reduced ? 1 : .985 };
-    if (reduced) {
+    if (reduced || preparing) {
       // Explicit values survive popup remounts and let reduced motion stop an
       // in-flight spring even when its destination has not changed.
       popupOpacity.stop(); popupY.stop(); popupScale.stop();
       popupOpacity.set(target.opacity); popupY.set(target.y); popupScale.set(target.scale);
+      contentOpacity.stop(); contentY.stop();
+      contentOpacity.set(target.opacity); contentY.set(reduced ? 0 : 4);
     } else if (changed) {
       const transition = popupVisible ? POPOVER_ENTER : POPOVER_EXIT;
       animate(popupOpacity, target.opacity, transition);
       animate(popupY, target.y, transition);
       animate(popupScale, target.scale, transition);
+      // Content follows the prepared surface without changing its measured box.
+      // Motion values retain the drawn pose when opening is reversed mid-flight.
+      const contentTransition = popupVisible ? { ...CONTENT_ENTER, delay: .025 } : CONTENT_EXIT;
+      animate(contentOpacity, target.opacity, contentTransition);
+      animate(contentY, popupVisible ? 0 : -3, contentTransition);
     }
-  }, [popupMounted, popupVisible, reduced, popupOpacity, popupY, popupScale]);
+  }, [popupMounted, popupVisible, reduced, popupOpacity, popupY, popupScale, contentOpacity, contentY]);
 
-  useEffect(() => () => { popupOpacity.stop(); popupY.stop(); popupScale.stop(); }, [popupOpacity, popupY, popupScale]);
+  useEffect(() => () => {
+    popupOpacity.stop(); popupY.stop(); popupScale.stop(); contentOpacity.stop(); contentY.stop();
+  }, [popupOpacity, popupY, popupScale, contentOpacity, contentY]);
 
   useEffect(() => {
     const query = matchMedia('(prefers-reduced-motion: reduce)');
@@ -304,18 +318,21 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
       </> : <>
         <button ref={openButton} type="button" aria-label={popupVisible ? 'Fechar controles de volume' : 'Abrir controles de volume'} aria-expanded={popupVisible}
           aria-controls="top-right-popup" onPointerEnter={hoverOpen} onClick={() => intent.current ? closePopup() : openPopup()} title={error || 'Volume'}>
-          {error ? <CircleAlert size={13} aria-hidden="true" /> : popupVisible ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
+          {error ? <CircleAlert size={13} aria-hidden="true" /> : <span className="desktop-top-chevron" aria-hidden="true"><ChevronDown size={12} aria-hidden="true" /></span>}
         </button>
         <button type="button" aria-label={silent ? 'Restaurar volume' : 'Silenciar áudio'} title={volumeAvailable ? `${silent ? 'Sem som' : `${Math.round(media.snapshot.volume!)}%`} · ${silent ? 'restaurar' : 'silenciar'}` : 'Volume indisponível'}
           disabled={!volumeAvailable || media.pending} onPointerEnter={hoverOpen} onClick={toggleSound}>
-          {silent ? <VolumeX size={14} aria-hidden="true" /> : <Volume2 size={14} aria-hidden="true" />}
+          <span className="desktop-top-sound-icon" data-muted={silent} aria-hidden="true">
+            <span className="desktop-top-sound-layer is-audible"><Volume2 size={14} aria-hidden="true" /></span>
+            <span className="desktop-top-sound-layer is-muted"><VolumeX size={14} aria-hidden="true" /></span>
+          </span>
         </button>
       </>}
     </div>
     {popupMounted && <motion.div ref={popup} id={`${label}-popup`} className="desktop-top-panel" data-panel-visible={popupVisible}
       aria-hidden={!popupVisible} inert={!popupVisible || undefined}
       style={{ opacity: popupOpacity, y: popupY, scale: popupScale, transformOrigin: `top ${side}` }}>
-      <div ref={popupContent} className="desktop-top-panel-content">
+      <motion.div ref={popupContent} className="desktop-top-panel-content" style={{ opacity: contentOpacity, y: contentY }}>
       {side === 'left' ? <IslandAppearance idPrefix="top-left-appearance" onClose={() => closePopup(true)} onOpenFull={() => { void navigate('appearance'); }} /> : <>
         <div className="desktop-top-volume-heading"><span><Volume2 size={14} aria-hidden="true" /><strong>Som do Windows</strong></span><button type="button" aria-label="Fechar volume" onClick={() => closePopup(true)}><X size={14} aria-hidden="true" /></button></div>
         {volumeAvailable ? <MusicVolume /> : <p className="desktop-top-help">{media.snapshot.supported ? 'Não foi possível ler o volume. Tente novamente.' : 'O volume do sistema está disponível no aplicativo para Windows.'}</p>}
@@ -323,7 +340,7 @@ export function DesktopTopControls({ side }: { side: 'left' | 'right' }) {
         {(media.error || media.snapshot.error) && <p className="desktop-top-error" role="alert">{media.error || media.snapshot.error}</p>}
       </>}
       {error && <p className="desktop-top-error" role="alert">{error}<button type="button" onClick={() => closePopup()}>Tentar recolher</button></p>}
-      </div>
+      </motion.div>
     </motion.div>}
     {error && !popupMounted && <span className="desktop-top-sr-error" role="alert">{error}</span>}
   </div>;

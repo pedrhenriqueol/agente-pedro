@@ -17,7 +17,9 @@ export function SelectionIndicator({ owner, selection, selector, className, axis
     if (!container || !node) return;
     const update = () => {
       const selected = container.querySelector<HTMLElement>(selector);
-      if (!selected) return;
+      // Retained pages are briefly display:none. Preserve the last geometry
+      // rather than animating back from an empty box when they become active.
+      if (!selected || !selected.offsetWidth || !selected.offsetHeight) return;
       // Offset coordinates stay anchored while a tab strip scrolls.
       if (axis === 'vertical') {
         node.style.transform = `translateY(${selected.offsetTop + (selected.offsetHeight - 16) / 2}px)`;
