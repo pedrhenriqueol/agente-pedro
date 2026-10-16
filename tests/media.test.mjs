@@ -521,3 +521,156 @@ test('Última desmontagem limpa prazo transitório e remonte StrictMode não con
     assert.equal(env.timers.size, 0);
   } finally { closeRestart(); }
 });
+
+test('Metadados vazios conservam apenas a apresentação e ticks não prolongam a carência nem liberam controles', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    const original = plain(env.useMediaStore.getState().displaySession);
+    env.emit('pedro:media', snapshot({ revision: 2, session: { title: '  ', artist: '\t' } }));
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'updating');
+    env.clock.advance(900);
+    env.emit('pedro:media-position', { revision: 2, sequence: 3, sessionId: 'soundcloud-tab', positionSeconds: 0, durationSeconds: 200 });
+    assert.deepEqual(plain(env.useMediaStore.getState().displaySession), original);
+    await assert.rejects(env.useMediaStore.getState().controlMedia('next'), /Nenhuma reprodução/);
+    assert.equal(env.calls.length, 1, 'Uma sessão sem identidade de faixa não pode receber transporte');
+    env.emit('pedro:media', snapshot({ revision: 2, sequence: 4, session: { title: '', artist: '' } }));
+    env.clock.advance(env.MEDIA_PRESENTATION_GRACE_MS - 900);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'empty');
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+    assert.equal(env.timers.size, 0);
+    env.emit('pedro:media-position', { revision: 2, sequence: 5, sessionId: 'soundcloud-tab', positionSeconds: 1, durationSeconds: 200 });
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+  } finally { close(); }
+});
+
+test('Artista informado sem título continua sendo uma identidade utilizável', async () => {
+  const env = environment({ initial: snapshot({ session: { title: ' ', artist: 'Rádio ao vivo' } }) });
+  const close = await env.initializeMedia();
+  try {
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    env.emit('pedro:media-position', { revision: 1, sequence: 2, sessionId: 'soundcloud-tab', positionSeconds: 13, durationSeconds: 180 });
+    assert.equal(env.useMediaStore.getState().displaySession.artist, 'Rádio ao vivo');
+    await env.useMediaStore.getState().controlMedia('pause');
+    assert.equal(env.calls.length, 2);
+  } finally { close(); }
+});
+
+test('Indisponibilidade nativa tem prioridade mesmo quando o snapshot contém metadados anteriores', async () => {
+  for (const failure of [{ error: 'Serviço de mídia indisponível' }, { supported: false }]) {
+    const env = environment(); const close = await env.initializeMedia();
+    try {
+      env.emit('pedro:media', snapshot({ revision: 2, ...failure }));
+      assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+      assert.equal(env.useMediaStore.getState().displaySession, null);
+      env.emit('pedro:media-position', { revision: 2, sequence: 3, sessionId: 'soundcloud-tab', positionSeconds: 18, durationSeconds: 180 });
+      assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+      assert.equal(env.useMediaStore.getState().displaySession, null);
+      await assert.rejects(env.useMediaStore.getState().controlMedia('pause'));
+      assert.equal(env.calls.length, 1);
+    } finally { close(); }
+  }
+});
+
+test('Falha atrasada de leitura não substitui uma faixa saudável recebida durante a consulta', async () => {
+  const env = environment(); const close = await env.initializeMedia(); const reading = deferred();
+  try {
+    env.handleInvoke(() => reading.promise);
+    const refresh = env.useMediaStore.getState().refreshMedia();
+    await settle();
+    env.emit('pedro:media', snapshot({ revision: 2, sequence: 3, session: { title: 'Faixa nova saudável' } }));
+    reading.reject(new Error('Consulta anterior interrompida'));
+    await assert.rejects(refresh, /anterior interrompida/);
+    assert.equal(env.useMediaStore.getState().displaySession.title, 'Faixa nova saudável');
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().error, null);
+  } finally { close(); }
+});
+
+test('Leitura antiga com a mesma revisão não desfaz falha de uma consulta posterior', async () => {
+  const env = environment(); const close = await env.initializeMedia(); const reading = deferred();
+  try {
+    env.handleInvoke(() => reading.promise);
+    const older = env.useMediaStore.getState().refreshMedia();
+    await settle();
+    env.handleInvoke(async () => { throw new Error('Consulta mais recente falhou'); });
+    await assert.rejects(env.useMediaStore.getState().refreshMedia(), /mais recente/);
+    reading.resolve(snapshot());
+    await older;
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+    assert.match(env.useMediaStore.getState().error, /mais recente/);
+  } finally { close(); }
+});
+
+test('Tick autoritativo saudável recupera falha de leitura sem depender da próxima troca de faixa', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.handleInvoke(async () => { throw new Error('Consulta indisponível'); });
+    await assert.rejects(env.useMediaStore.getState().refreshMedia());
+    env.emit('pedro:media-position', { revision: 1, sequence: 2, sessionId: 'soundcloud-tab', positionSeconds: 15, durationSeconds: 180 });
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().error, null);
+    assert.equal(env.useMediaStore.getState().displaySession.positionSeconds, 15);
+  } finally { close(); }
+});
+
+test('Erro de transporte permanece visível nos ticks, mas não acompanha uma nova faixa saudável', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.handleInvoke(async () => { throw new Error('O player recusou o comando de música'); });
+    await assert.rejects(env.useMediaStore.getState().controlMedia('next'), /recusou/);
+    env.emit('pedro:media-position', { revision: 1, sequence: 2, sessionId: 'soundcloud-tab', positionSeconds: 15, durationSeconds: 180 });
+    assert.match(env.useMediaStore.getState().error, /recusou/, 'Posição não confirma sucesso de transporte');
+    env.emit('pedro:media', snapshot({ revision: 1, sequence: 3 }));
+    assert.match(env.useMediaStore.getState().error, /recusou/, 'O mesmo contexto de reprodução não confirma sucesso de transporte');
+    env.emit('pedro:media', snapshot({ revision: 2, sequence: 4, session: { title: 'Faixa seguinte' } }));
+    assert.equal(env.useMediaStore.getState().error, null);
+    assert.equal(env.calls.filter(call => call.command === 'media_control').length, 1, 'Uma recusa nunca reenvia automaticamente o skip');
+  } finally { close(); }
+});
+
+test('Falha de leitura não reintroduz metadados vazios, e ticks sem identidade válida não recuperam a fase', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.emit('pedro:media', snapshot({ revision: 2, session: { title: ' ', artist: '' } }));
+    env.handleInvoke(async () => { throw new Error('Consulta interrompida'); });
+    await assert.rejects(env.useMediaStore.getState().refreshMedia());
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+    env.emit('pedro:media-position', { revision: 2, sequence: 3, sessionId: 'soundcloud-tab', positionSeconds: 15, durationSeconds: 180 });
+    assert.equal(env.useMediaStore.getState().displaySession, null);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'unavailable');
+    assert.match(env.useMediaStore.getState().error, /interrompida/);
+  } finally { close(); }
+});
+
+test('Recuperar a leitura com ticks não apaga uma recusa legítima de volume', async () => {
+  const env = environment(); const close = await env.initializeMedia();
+  try {
+    env.handleInvoke(async command => { throw new Error(command === 'media_snapshot' ? 'Consulta interrompida' : 'Não foi possível ajustar o volume'); });
+    await assert.rejects(env.useMediaStore.getState().refreshMedia());
+    await assert.rejects(env.useMediaStore.getState().controlMedia('volume', 60), /ajustar o volume/);
+    env.emit('pedro:media-position', { revision: 1, sequence: 2, sessionId: 'soundcloud-tab', positionSeconds: 15, durationSeconds: 180 });
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.match(env.useMediaStore.getState().error, /ajustar o volume/);
+    env.emit('pedro:media', snapshot({ revision: 2, session: { title: 'Faixa seguinte' } }));
+    assert.match(env.useMediaStore.getState().error, /ajustar o volume/, 'Uma mudança de faixa não confirma um ajuste de volume');
+    env.handleInvoke(async () => snapshot({ revision: 2 }));
+    await env.useMediaStore.getState().refreshMedia();
+    assert.equal(env.useMediaStore.getState().error, null);
+  } finally { close(); }
+});
+
+test('Rejeição atrasada de transporte não acrescenta erro à faixa que já se recuperou por evento', async () => {
+  const env = environment(); const close = await env.initializeMedia(); const command = deferred();
+  try {
+    env.handleInvoke(() => command.promise);
+    const skip = env.useMediaStore.getState().controlMedia('next');
+    await settle();
+    env.emit('pedro:media', snapshot({ revision: 2, session: { id: 'new-player', title: 'Faixa recuperada' } }));
+    command.reject(new Error('A sessão de música mudou'));
+    await assert.rejects(skip, /sessão de música mudou/);
+    assert.equal(env.useMediaStore.getState().presentationPhase, 'ready');
+    assert.equal(env.useMediaStore.getState().error, null);
+    assert.equal(env.useMediaStore.getState().pending, false);
+    assert.equal(env.calls.filter(call => call.command === 'media_control').length, 1);
+  } finally { close(); }
+});

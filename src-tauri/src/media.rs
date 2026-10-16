@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 
+#[cfg(any(windows, test))]
+#[path = "media_policy.rs"]
+mod policy;
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaSession {
@@ -198,14 +202,16 @@ fn timeline_seconds(
 
 #[cfg(windows)]
 mod platform {
+    use super::policy::{
+        candidate_rank, select_candidate, CandidateRead, PlaybackKind, ReadBudget, SelectionTracker,
+    };
     use super::*;
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::thread;
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
     use tauri::{Emitter, Manager};
+    use windows::core::{IUnknown, Interface};
     use windows::Media::Control::{
         GlobalSystemMediaTransportControlsSession as Session,
         GlobalSystemMediaTransportControlsSessionManager as SessionManager,
@@ -226,11 +232,16 @@ mod platform {
 
     // Polling on the dedicated MTA thread gives every WinRT operation a deadline;
     // calling .get() directly would allow a broken provider to stall forever.
-    macro_rules! bounded {
-        ($operation:expr) => {{
+    macro_rules! bounded_until {
+        ($operation:expr, $deadline:expr) => {{
             (|| -> windows::core::Result<_> {
+                let deadline = $deadline;
+                if Instant::now() >= deadline {
+                    return Err(windows::core::Error::from_hresult(windows::core::HRESULT(
+                        0x800705B4u32 as i32,
+                    )));
+                }
                 let operation = $operation?;
-                let deadline = Instant::now() + NATIVE_TIMEOUT;
                 while operation.Status()?.0 == 0 {
                     if Instant::now() >= deadline {
                         let _ = operation.Cancel();
@@ -243,6 +254,12 @@ mod platform {
                 operation.GetResults()
             })()
         }};
+    }
+
+    macro_rules! bounded {
+        ($operation:expr) => {
+            bounded_until!($operation, Instant::now() + NATIVE_TIMEOUT)
+        };
     }
 
     pub(super) struct Request {
@@ -309,7 +326,12 @@ mod platform {
     }
 
     impl ArtworkCache {
-        fn read(&mut self, key: String, properties: &Properties) -> Option<String> {
+        fn read(
+            &mut self,
+            key: String,
+            properties: &Properties,
+            deadline: Instant,
+        ) -> Option<String> {
             let retry_after = if self.artwork.is_some() {
                 Duration::from_secs(30)
             } else {
@@ -320,20 +342,33 @@ mod platform {
                     .read_at
                     .is_some_and(|time| time.elapsed() < retry_after);
             if !fresh {
+                if self.key != key {
+                    self.artwork = None;
+                    self.read_at = None;
+                }
                 self.key = key;
                 // Invalid/missing artwork must not prevent transport controls.
-                self.artwork = read_artwork(properties).ok().flatten();
-                self.read_at = Some(Instant::now());
+                if Instant::now() < deadline {
+                    if let Ok(artwork) = read_artwork(properties, deadline) {
+                        self.artwork = artwork;
+                    }
+                    // A refresh timeout keeps a known image for this exact
+                    // track, and is retried later without flashing the cover.
+                    self.read_at = Some(Instant::now());
+                }
             }
             self.artwork.clone()
         }
     }
 
-    fn read_artwork(properties: &Properties) -> windows::core::Result<Option<String>> {
+    fn read_artwork(
+        properties: &Properties,
+        deadline: Instant,
+    ) -> windows::core::Result<Option<String>> {
         let Ok(reference) = properties.Thumbnail() else {
             return Ok(None);
         };
-        let stream = bounded!(reference.OpenReadAsync())?;
+        let stream = bounded_until!(reference.OpenReadAsync(), deadline)?;
         let size = stream.Size()?;
         if size == 0 || size > MAX_ARTWORK_BYTES {
             return Ok(None);
@@ -341,7 +376,7 @@ mod platform {
         let declared_mime = stream.ContentType()?.to_string().to_ascii_lowercase();
         let input = stream.GetInputStreamAt(0)?;
         let reader = DataReader::CreateDataReader(&input)?;
-        let loaded = bounded!(reader.LoadAsync(size as u32))?;
+        let loaded = bounded_until!(reader.LoadAsync(size as u32), deadline)?;
         if u64::from(loaded) != size {
             return Ok(None);
         }
@@ -363,104 +398,105 @@ mod platform {
         )))
     }
 
-    fn is_playing(session: &Session) -> bool {
-        session
-            .GetPlaybackInfo()
-            .and_then(|info| info.PlaybackStatus())
-            .is_ok_and(|status| status == PlaybackStatus::Playing)
+    type SelectedSession = SelectionTracker<IUnknown, Session>;
+
+    fn playback_kind(status: PlaybackStatus) -> PlaybackKind {
+        if status == PlaybackStatus::Playing {
+            PlaybackKind::Playing
+        } else if status == PlaybackStatus::Paused {
+            PlaybackKind::Paused
+        } else if status == PlaybackStatus::Stopped {
+            PlaybackKind::Stopped
+        } else if status == PlaybackStatus::Closed {
+            PlaybackKind::Closed
+        } else {
+            PlaybackKind::Unknown
+        }
     }
 
-    fn select_session(manager: &SessionManager) -> Option<Session> {
-        let sessions = manager.GetSessions().ok()?;
-        let count = sessions.Size().ok()?;
+    struct Candidate {
+        session: Session,
+        identity: IUnknown,
+        rank: u8,
+    }
+
+    fn candidates(
+        manager: &SessionManager,
+        selected: &SelectedSession,
+        budget: &ReadBudget,
+    ) -> windows::core::Result<Vec<Candidate>> {
+        // These errors belong to the manager and must trigger recovery. A
+        // failed/null current-session hint or an individual dead tab does not.
+        let sessions = manager.GetSessions()?;
+        let count = sessions.Size()?;
         if count == 0 {
-            return None;
+            return Ok(Vec::new());
         }
-
-        // GetCurrentSession is a hint from Windows. It can fail or return null
-        // when the media app is running in the background. Never fail on error.
-        let current = manager.GetCurrentSession().ok();
-
-        // 1. If current session is actively playing, use it.
-        if let Some(curr) = &current {
-            if is_playing(curr) {
-                return Some(curr.clone());
+        let mut result = Vec::new();
+        let mut add = |session: Session, current: bool| {
+            let Ok(identity) = session.cast::<IUnknown>() else {
+                return;
+            };
+            if result
+                .iter()
+                .any(|candidate: &Candidate| candidate.identity == identity)
+            {
+                return;
             }
+            let Ok(status) = session
+                .GetPlaybackInfo()
+                .and_then(|info| info.PlaybackStatus())
+            else {
+                return;
+            };
+            let retained = selected
+                .current()
+                .is_some_and(|previous| previous.identity == identity);
+            if let Some(rank) = candidate_rank(playback_kind(status), current, retained) {
+                result.push(Candidate {
+                    session,
+                    identity,
+                    rank,
+                });
+            }
+        };
+        if let Ok(current) = manager.GetCurrentSession() {
+            add(current, true);
         }
-
-        // 2. Scan all sessions: find any session actively playing.
-        let mut candidate_paused = None;
+        // A provider can disappear while this view is enumerated. Skip that
+        // entry, rather than aborting the other browser/player sessions.
         for index in 0..count {
-            if let Ok(candidate) = sessions.GetAt(index) {
-                if is_playing(&candidate) {
-                    return Some(candidate);
-                }
-                if candidate_paused.is_none() {
-                    if let Ok(info) = candidate.GetPlaybackInfo() {
-                        if let Ok(status) = info.PlaybackStatus() {
-                            if status == PlaybackStatus::Paused {
-                                candidate_paused = Some(candidate);
-                            }
-                        }
-                    }
-                }
+            if !budget.has_time(Instant::now()) {
+                break;
+            }
+            if let Ok(session) = sessions.GetAt(index) {
+                add(session, false);
             }
         }
-
-        // 3. Fallbacks when nothing is currently playing (e.g. track change, paused tab):
-        if let Some(curr) = current {
-            if let Ok(info) = curr.GetPlaybackInfo() {
-                if let Ok(status) = info.PlaybackStatus() {
-                    if status != PlaybackStatus::Closed && status != PlaybackStatus::Stopped {
-                        return Some(curr);
-                    }
-                }
-            }
-        }
-
-        if let Some(paused) = candidate_paused {
-            return Some(paused);
-        }
-
-        // 4. Any session not closed
-        for index in 0..count {
-            if let Ok(candidate) = sessions.GetAt(index) {
-                if let Ok(info) = candidate.GetPlaybackInfo() {
-                    if let Ok(status) = info.PlaybackStatus() {
-                        if status != PlaybackStatus::Closed {
-                            return Some(candidate);
-                        }
-                    }
-                }
-            }
-        }
-
-        sessions.GetAt(0).ok()
-    }
-
-    fn session_id(session: &Session) -> windows::core::Result<String> {
-        // Use the application model id to generate a deterministic, stable session id.
-        // WinRT COM pointer addresses are transient proxies on the heap and must not
-        // be hashed into the session identity.
-        let app_id = session.SourceAppUserModelId()?.to_string();
-        let mut hasher = DefaultHasher::new();
-        app_id.hash(&mut hasher);
-        Ok(format!("{:016x}", hasher.finish()))
+        Ok(result)
     }
 
     fn read_session(
         session: &Session,
-        artwork: &mut ArtworkCache,
-    ) -> windows::core::Result<MediaSession> {
-        let id = session_id(session)?;
-        let properties = bounded!(session.TryGetMediaPropertiesAsync())?;
+        deadline: Instant,
+    ) -> windows::core::Result<Option<(MediaSession, Properties)>> {
+        let properties = bounded_until!(session.TryGetMediaPropertiesAsync(), deadline)?;
         let info = session.GetPlaybackInfo()?;
-        let controls = info.Controls()?;
+        let controls = info.Controls().ok();
         let status = info.PlaybackStatus()?;
         let title = properties.Title()?.to_string();
-        let artist = properties.Artist()?.to_string();
-        let album = properties.AlbumTitle()?.to_string();
-        let artwork_key = format!("{id}\0{title}\0{artist}\0{album}");
+        let artist = properties
+            .Artist()
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        if status == PlaybackStatus::Closed || (title.trim().is_empty() && artist.trim().is_empty())
+        {
+            return Ok(None);
+        }
+        let album = properties
+            .AlbumTitle()
+            .map(|value| value.to_string())
+            .unwrap_or_default();
         let (position_seconds, duration_seconds) = session
             .GetTimelineProperties()
             .ok()
@@ -488,30 +524,46 @@ mod platform {
                 ))
             })
             .unwrap_or((None, None));
-        Ok(MediaSession {
-            id,
-            source_app: session.SourceAppUserModelId()?.to_string(),
-            title,
-            artist,
-            album,
-            artwork: artwork.read(artwork_key, &properties),
-            playback_status: if status == PlaybackStatus::Playing {
-                "playing"
-            } else if status == PlaybackStatus::Paused {
-                "paused"
-            } else if status == PlaybackStatus::Stopped || status == PlaybackStatus::Closed {
-                "stopped"
-            } else {
-                "unknown"
-            }
-            .into(),
-            can_play: controls.IsPlayEnabled()?,
-            can_pause: controls.IsPauseEnabled()?,
-            can_go_next: controls.IsNextEnabled()?,
-            can_go_previous: controls.IsPreviousEnabled()?,
-            position_seconds,
-            duration_seconds,
-        })
+        Ok(Some((
+            MediaSession {
+                // Assigned only after usable metadata chooses the retained object.
+                id: String::new(),
+                source_app: session.SourceAppUserModelId()?.to_string(),
+                title,
+                artist,
+                album,
+                artwork: None,
+                playback_status: if status == PlaybackStatus::Playing {
+                    "playing"
+                } else if status == PlaybackStatus::Paused {
+                    "paused"
+                } else if status == PlaybackStatus::Stopped || status == PlaybackStatus::Closed {
+                    "stopped"
+                } else {
+                    "unknown"
+                }
+                .into(),
+                can_play: controls
+                    .as_ref()
+                    .and_then(|controls| controls.IsPlayEnabled().ok())
+                    .unwrap_or(false),
+                can_pause: controls
+                    .as_ref()
+                    .and_then(|controls| controls.IsPauseEnabled().ok())
+                    .unwrap_or(false),
+                can_go_next: controls
+                    .as_ref()
+                    .and_then(|controls| controls.IsNextEnabled().ok())
+                    .unwrap_or(false),
+                can_go_previous: controls
+                    .as_ref()
+                    .and_then(|controls| controls.IsPreviousEnabled().ok())
+                    .unwrap_or(false),
+                position_seconds,
+                duration_seconds,
+            },
+            properties,
+        )))
     }
 
     fn endpoint() -> windows::core::Result<IAudioEndpointVolume> {
@@ -525,11 +577,18 @@ mod platform {
         }
     }
 
+    struct SnapshotRead {
+        snapshot: MediaSnapshot,
+        manager_failed: bool,
+    }
+
     fn read_snapshot(
-        manager: &SessionManager,
+        manager: Option<&SessionManager>,
+        manager_error: Option<&str>,
         artwork: &mut ArtworkCache,
-        retained_session: &mut Option<Session>,
-    ) -> MediaSnapshot {
+        selected: &mut SelectedSession,
+        rotation: &mut usize,
+    ) -> SnapshotRead {
         let (volume, muted) = match endpoint() {
             Ok(endpoint) => unsafe {
                 (
@@ -542,28 +601,74 @@ mod platform {
             },
             Err(_) => (None, None),
         };
-        let session = match select_session(manager) {
-            Some(candidate) => match read_session(&candidate, artwork) {
-                Ok(s) => {
-                    *retained_session = Some(candidate);
-                    Some(s)
-                }
-                Err(_) => {
-                    *retained_session = None;
-                    None
-                }
-            },
-            None => {
-                *retained_session = None;
-                None
-            }
-        };
-
-        MediaSnapshot {
-            session,
+        let mut snapshot = MediaSnapshot {
             volume,
             muted,
             ..MediaSnapshot::default()
+        };
+        let Some(manager) = manager else {
+            selected.clear();
+            snapshot.error = Some(
+                manager_error
+                    .unwrap_or("A integração de mídia do Windows está iniciando.")
+                    .into(),
+            );
+            return SnapshotRead {
+                snapshot,
+                manager_failed: false,
+            };
+        };
+        let budget = ReadBudget::new(Instant::now());
+        let candidates = match candidates(manager, selected, &budget) {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                selected.clear();
+                snapshot.error = Some(format!(
+                    "Não foi possível consultar a mídia do Windows: {error}"
+                ));
+                return SnapshotRead {
+                    snapshot,
+                    manager_failed: true,
+                };
+            }
+        };
+        let ranks: Vec<_> = candidates.iter().map(|candidate| candidate.rank).collect();
+        let mut remaining_candidates = candidates.len();
+        let chosen = select_candidate(&ranks, *rotation, |index| {
+            let Some(deadline) = budget.candidate_deadline(Instant::now(), remaining_candidates)
+            else {
+                return CandidateRead::Exhausted;
+            };
+            remaining_candidates -= 1;
+            match read_session(&candidates[index].session, deadline) {
+                Ok(Some(session)) => CandidateRead::Ready(session),
+                // Missing metadata or a detached provider belongs to this tab.
+                // The other candidates must still get a chance to answer.
+                Ok(None) | Err(_) => CandidateRead::Skip,
+            }
+        });
+        *rotation = rotation.wrapping_add(1);
+        if let Some((index, (mut session, properties))) = chosen {
+            let candidate = &candidates[index];
+            session.id = selected
+                .select(candidate.identity.clone(), candidate.session.clone())
+                .token
+                .clone();
+            let now = Instant::now();
+            let deadline = budget.artwork_deadline(now).unwrap_or(now);
+            let key = format!(
+                "{}\0{}\0{}\0{}",
+                session.id, session.title, session.artist, session.album
+            );
+            session.artwork = artwork.read(key, &properties, deadline);
+            snapshot.session = Some(session);
+        } else {
+            // Retention is never authority to control a vanished/unreadable tab.
+            selected.clear();
+        }
+        SnapshotRead {
+            snapshot,
+            manager_failed: false,
         }
     }
 
@@ -636,7 +741,7 @@ mod platform {
         snapshot
     }
 
-    fn apply(manager: &SessionManager, request: &Request) -> Result<(), String> {
+    fn apply(selected: &SelectedSession, request: &Request) -> Result<(), String> {
         if Instant::now() >= request.expires_at {
             return Err("O comando expirou. Tente novamente.".into());
         }
@@ -656,32 +761,20 @@ mod platform {
             return Ok(());
         }
 
-        let target_session = if let Some(target_id) = request.session_id.as_deref() {
-            let mut found = None;
-            if let Ok(sessions) = manager.GetSessions() {
-                if let Ok(count) = sessions.Size() {
-                    for i in 0..count {
-                        if let Ok(s) = sessions.GetAt(i) {
-                            if let Ok(id) = session_id(&s) {
-                                if id == target_id {
-                                    found = Some(s);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            found.or_else(|| select_session(manager))
-        } else {
-            select_session(manager)
-        };
-
-        let session = target_session.ok_or("Nenhuma música está disponível para controlar.")?;
-        let controls = session
+        // Execute on the exact object that supplied the displayed token. App IDs
+        // are shared by tabs, and re-electing a session can skip the wrong tab.
+        // A fresh COM enumeration is not a prerequisite for controlling this
+        // retained handle; recreated proxies cannot redirect or reject it.
+        let session = selected
+            .handle_for(request.session_id.as_deref())
+            .ok_or("A sessão de música mudou. Aguarde a atualização e tente novamente.")?;
+        let info = session
             .GetPlaybackInfo()
-            .and_then(|info| info.Controls())
             .map_err(|error| error.to_string())?;
+        if info.PlaybackStatus().map_err(|error| error.to_string())? == PlaybackStatus::Closed {
+            return Err("A sessão de música foi fechada. Aguarde a próxima reprodução.".into());
+        }
+        let controls = info.Controls().map_err(|error| error.to_string())?;
         let allowed = match request.action {
             MediaAction::Play => controls.IsPlayEnabled(),
             MediaAction::Pause => controls.IsPauseEnabled(),
@@ -692,6 +785,9 @@ mod platform {
         .map_err(|error| error.to_string())?;
         if !allowed {
             return Err("O player atual não oferece esse comando.".into());
+        }
+        if Instant::now() >= request.expires_at {
+            return Err("O comando expirou. Tente novamente.".into());
         }
         let result = match request.action {
             MediaAction::Play => bounded!(session.TryPlayAsync()),
@@ -727,8 +823,11 @@ mod platform {
         };
         let mut manager: Option<SessionManager> = None;
         let mut last_manager_attempt: Option<Instant> = None;
+        let mut manager_error: Option<String> = None;
         let mut artwork = ArtworkCache::default();
-        let mut retained_session = None;
+        let mut selected = SelectedSession::default();
+        let mut rotation = 0;
+        let mut poll_due = true;
         loop {
             // Failed startup remains observable and is retried, never reported as
             // an ordinary empty player or hidden behind a fake supported=false.
@@ -737,44 +836,58 @@ mod platform {
             {
                 last_manager_attempt = Some(Instant::now());
                 match bounded!(SessionManager::RequestAsync()) {
-                    Ok(ready) => manager = Some(ready),
+                    Ok(ready) => {
+                        manager = Some(ready);
+                        manager_error = None;
+                    }
                     Err(error) => {
-                        publish(
-                            &app,
-                            &state,
-                            MediaSnapshot {
-                                error: Some(format!(
-                                    "A integração de mídia do Windows está indisponível: {error}"
-                                )),
-                                ..MediaSnapshot::default()
-                            },
-                        );
+                        manager_error = Some(format!(
+                            "A integração de mídia do Windows está indisponível: {error}"
+                        ));
                     }
                 }
+                poll_due = true;
             }
-            if let Some(manager_ref) = &manager {
-                if manager_ref.GetSessions().is_err() {
-                    manager = None;
-                }
-            }
-            if let Some(manager) = &manager {
-                publish(
-                    &app,
-                    &state,
-                    read_snapshot(manager, &mut artwork, &mut retained_session),
+            if poll_due {
+                let read = read_snapshot(
+                    manager.as_ref(),
+                    manager_error.as_deref(),
+                    &mut artwork,
+                    &mut selected,
+                    &mut rotation,
                 );
+                if read.manager_failed {
+                    manager = None;
+                    manager_error = read.snapshot.error.clone();
+                    last_manager_attempt = Some(Instant::now());
+                }
+                publish(&app, &state, read.snapshot);
             }
             match receiver.recv_timeout(POLL_INTERVAL) {
                 Ok(request) => {
-                    let result = match &manager {
-                        Some(manager) => apply(manager, &request).map(|()| {
-                            publish(&app, &state, read_snapshot(manager, &mut artwork, &mut retained_session))
-                        }),
-                        None => Err("A integração de mídia do Windows está indisponível. Tente novamente em instantes.".into()),
-                    };
-                    let _ = request.reply.send(result);
+                    // Volume is independent of GSMTC availability. Transport is
+                    // attempted once, then both success and failure rescan state;
+                    // a timed-out skip must never be resent automatically.
+                    let result = apply(&selected, &request);
+                    let read = read_snapshot(
+                        manager.as_ref(),
+                        manager_error.as_deref(),
+                        &mut artwork,
+                        &mut selected,
+                        &mut rotation,
+                    );
+                    if read.manager_failed {
+                        manager = None;
+                        manager_error = read.snapshot.error.clone();
+                        last_manager_attempt = Some(Instant::now());
+                    }
+                    let snapshot = publish(&app, &state, read.snapshot);
+                    let _ = request.reply.send(result.map(|()| snapshot));
+                    // The command already sampled the latest state. Avoid a
+                    // second metadata/artwork pass before the next queued input.
+                    poll_due = false;
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => (),
+                Err(mpsc::RecvTimeoutError::Timeout) => poll_due = true,
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
             }
         }
